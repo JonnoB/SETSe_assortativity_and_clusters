@@ -105,9 +105,7 @@ setse_3d <-1:500 %>% map_df(~{
       from_class == to_class ~ "class",
       TRUE ~"inter"
     ),
-    flow = 1,
     distance = 1,
-    capacity = 1
     ) %>%
     left_join(k_options2, by = "match_type")
   
@@ -117,56 +115,85 @@ setse_3d <-1:500 %>% map_df(~{
     
     setse_complete <- auto_SETSe(g_out,
                                  force = "force",
-                                 flow = "flow",
                                  distance = "distance",
-                                 capacity = "capacity",
                                  edge_name = "edge_name",
                                  k = paste0("k_", 0),
-                                 tol = 60/10000)
+                                 tol = sum(abs(vertex_attr(g_out, "force")))/10000,
+                                 sparse = FALSE, #The networks are small so dense networks are faster approx x3 in this case
+                                 verbose = F)
     
-    setse_complete$graphsummary <-tibble(
+    #by comparing the average tension experienced by each node we can 
+    edge_tension_per_node <- setse_complete$edge_embeddings %>%
+      select(edge_name, tension) %>%
+      separate(col = edge_name, into = c("from", "to"), sep = "_") %>%
+      pivot_longer(cols =c(from, to), names_to = "type", values_to = "node") %>%
+      group_by( node) %>%
+      summarise(mean_tension_per_node = mean(tension),
+                total_edges = n()) %>%
+      summarise(mean_tension_per_node = mean(mean_tension_per_node)) #this takes advantage of the skew in the mean to aid differentiation
+    #some nodes may have the same total tension but spread across different amount of nodes
+    
+    node_details <- left_join(setse_complete$node_embeddings, g_df$vertices, by = "node")
+    
+    
+    setse_complete$graphsummary <- tibble(
       strain = mean(abs(setse_complete$edge_embeddings$strain)),
-      elevation = left_join(setse_complete$node_embeddings, g_df$vertices, by = "node") %>% 
+      mean_A_elevation = node_details %>% 
         filter(class=="A") %>%
         pull(elevation) %>% mean,
+      mean_abs_elevation = mean(abs(node_details$elevation)),
+      median_abs_elevation =  median(abs(node_details$elevation)),
+      euc_elevation = sqrt(sum(node_details$elevation^2)),
       tension = mean(abs(setse_complete$edge_embeddings$tension)),
-      residual_force =  mean(abs(setse_complete$node_embeddings$static_force)), 
-      k = 0) %>%
-      mutate(
-        class_focus = .x,
-        graph_type = graph_type,
-        graph_id = graph_ref)
+      residual_force =  mean(abs(setse_complete$node_embeddings$static_force))) %>%
+      bind_cols(edge_tension_per_node )
     
     
     return(setse_complete)
   }) %>% transpose()
 
-  test_ten <- cbind(
+  euc_ten <- cbind(
     out_3d$edge_embeddings[[1]]$tension, 
     out_3d$edge_embeddings[[2]]$tension,
     out_3d$edge_embeddings[[3]]$tension) %>%
     as_tibble() %>%
-    mutate(euc_tens = sqrt(V1^2+ V2^2+ V3^2)) 
+    mutate(
+      edge_name = out_3d$edge_embeddings[[1]]$edge_name,
+      euc_ten = sqrt(V1^2+ V2^2+ V3^2)) 
   
-  test_elev <- cbind(
+  euc_elev <- cbind(
     out_3d$node_embeddings[[1]]$elevation, 
     out_3d$node_embeddings[[2]]$elevation,
     out_3d$node_embeddings[[3]]$elevation) %>%
     as_tibble() %>%
-    mutate(euc_elev = sqrt(V1^2+ V2^2+ V3^2)) 
+    mutate(
+      node = out_3d$node_embeddings[[1]]$node,
+      euc_elev = sqrt(V1^2+ V2^2+ V3^2)) 
   
   
+  #by comparing the average tension experienced by each node we can 
+  edge_tension_per_node <- euc_ten %>%
+    select(edge_name, tension = euc_ten) %>%
+    separate(col = edge_name, into = c("from", "to"), sep = "_") %>%
+    pivot_longer(cols =c(from, to), names_to = "type", values_to = "node") %>%
+    group_by( node) %>%
+    summarise(mean_tension_per_node = mean(tension),
+              total_edges = n()) 
   
-  out <- tibble(
-    elevation = mean(test_elev$euc_elev),
-    tension = mean(test_ten$euc_tens),
-    graph_type = graph_type,
-    graph_id = graph_ref
-  )
+  
+  out <- left_join(euc_elev, edge_tension_per_node) %>%
+    summarise(
+      mean_euc_elev = mean(euc_elev),
+      mean_tension_per_node = mean(mean_tension_per_node))  %>%#this takes advantage of the skew in the mean to aid differentiation
+    #some nodes may have the same total tension but spread across different amount of nodes
+    mutate(
+      graph_type = graph_type,
+      graph_id = graph_ref
+    )
   
   end_time <- Sys.time()
   
-  print(cat(paste("graph ", .x, ". time ", sep = ""), difftime(end_time,start_time)))
+  print(paste("graph ", .x, ". time ", as.numeric(end_time-start_time), "seconds", sep = " "))
   
   return(out)
   

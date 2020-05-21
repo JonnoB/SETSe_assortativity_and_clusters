@@ -21,11 +21,11 @@ uni_stats %>%
       
       g <- readRDS(uni_files[uni_pattern])  %>% #load file
         remove_small_components()  %>%
-        facebook_year_clean() %>% prepare_SETSe_continuous(., k = 1000, force_var = "year", 
+        facebook_year_clean() %>% prepare_SETSe_continuous(., node_names = "name", k = 1000, force_var = "year", 
                                                            sum_to_one = FALSE, 
                                                            distance = 100) 
       
-      embeddings_data <- SETSe_bicomp2(g, 
+      embeddings_data <- SETSe_bicomp(g, 
                                        tstep = 0.01,
                                        mass = 1,#sum(abs(vertex_attr(g, "force"))/2)/vcount(g), variable mass is useful when force is constant
                                        tol = sum(abs(vertex_attr(g, "force")))/1000,

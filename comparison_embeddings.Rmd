@@ -1,0 +1,392 @@
+---
+title: "Untitled"
+author: "Jonathan Bourne"
+date: "18/05/2020"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+This markdown is to convert the basic set of peels quintet graphs to the graphML format, so that they can be imported into python and used witht the GEM, library.
+
+This markdown file should be run after all chunks down to Introduction_to_sets2.Rmd has been run
+
+```{r}
+graphml_path <- file.path(PLwd, "peels_graphml")
+
+.x <- 200
+
+multi_quintet[[400]] %>% 
+  delete_vertex_attr(., "sub_class") %>% 
+  delete_edge_attr(., "type") %>%
+  as_data_frame(., what = "vertices") 
+
+vert
+
+1:500 %>% walk(~{
+graph_id <- .x
+
+
+g <-multi_quintet[[graph_id]] 
+graph_type <- graph_attr(g, "type")
+
+file_path <- file.path(graphml_path, paste0("graph_id_", graph_id, "_type_", graph_type, ".graphml"))
+
+g %>% 
+  delete_vertex_attr(., "sub_class") %>%
+  delete_vertex_attr(., "node") %>%
+  delete_edge_attr(., "type") %>%
+  delete_graph_attr(., "type") %>%
+  write_graph(., file_path, format = "graphml")
+
+}
+  )
+
+
+```
+
+#load back in the embeddings
+```{r}
+
+peels_metrics <- metric_set(accuracy, precision, recall, f_meas)
+
+embedded_files <- list.files(file.path(PLwd, "peel_benchamrk_embeddings"), full.names = T)
+
+include<-!grepl(embedded_files, pattern = "SDNE")
+GEM_embeds <- embedded_files[include] %>%
+  map_df(~{
+    
+    print(.x)
+    embedded_path <- .x#embedded_files[50]
+    
+    #split the file name to get the graph information
+    graph_data <- str_split(basename(embedded_path), pattern = "_", simplify = T )
+    
+    #read the csv in from the folder
+    csv_df <- read.csv(embedded_path, header = FALSE) #col_names = FALSE)
+    
+    #add the embedding values to the matching graph
+    g_temp <- multi_quintet[[as.integer(graph_data[6])]] %>%
+      set_vertex_attr(., "dimension_1", value =  csv_df %>% pull(1)) %>%
+      set_vertex_attr(., "dimension_2", value =  csv_df %>% pull(2))
+    
+    #create dataframe to perform linear separation analysis on
+    test_df <- as_data_frame(g_temp, what = "vertices") %>%
+      mutate(class = factor(class),
+             sub_class = factor(sub_class))
+    
+    #class_mod <- svm(class ~  dimension_2, test_df, kernel = "linear")
+    class_mod <- vglm(class ~ dimension_1 + dimension_2, family=multinomial, data = test_df)
+    
+    #sub_mod <- svm(sub_class ~  dimension_2, test_df, kernel = "linear")
+    sub_mod <- vglm(sub_class ~ dimension_1 + dimension_2, family=multinomial, data = test_df)
+    
+    class_preds_vect <- predict(class_mod, decision.values = TRUE, type = "response") %>% { colnames(.)[apply(., 1, which.max)]}
+    sub_preds_vect <- predict(sub_mod, decision.values = TRUE, type = "response") %>% { colnames(.)[apply(., 1, which.max)]}
+    
+        test_df <- test_df %>%
+      mutate(class_preds =  factor(class_preds_vect, levels = c("A", "B")),
+             sub_preds  = factor(sub_preds_vect, levels = c("A_1", "A_2", "B_1", "B_2")))
+        
+    # test_df <- test_df %>%
+    #   mutate(class_preds = predict(class_mod, decision.values = TRUE),
+    #          sub_preds  = predict(sub_mod, decision.values = TRUE))
+    
+    bind_rows(peels_metrics(test_df, truth = class, estimate = class_preds) %>%
+                mutate(model_type = "class"),
+              peels_metrics(test_df, truth = sub_class, estimate = sub_preds)%>%
+                mutate(model_type = "sub_class")
+    ) %>%
+      mutate(embeddings_method = graph_data[1],
+             embeddings_dimensions = graph_data[3],
+             graph_id = as.integer(graph_data[6]),
+             type = str_remove(graph_data[8], pattern = ".csv"))
+    
+  })
+
+
+GEM_embeds %>%
+  filter(.metric =="accuracy") %>%
+  ggplot(aes(x = embeddings_method, y = .estimate, fill = embeddings_method)) + geom_boxplot()+
+  facet_wrap(type~model_type)
+ 
+#plot example graph
+test_df %>%
+ggplot(., aes(x = dimension_1, y= dimension_2, colour = sub_class) ) + geom_point()
+
+
+GEM_embeds_agg <- embedded_files %>%
+  map_df(~{
+    
+    print(.x)
+    embedded_path <- .x#embedded_files[50]
+    
+    #split the file name to get the graph information
+    graph_data <- str_split(basename(embedded_path), pattern = "_", simplify = T )
+    
+    #read the csv in from the folder
+    csv_df <- read.csv(embedded_path, header = FALSE) #col_names = FALSE)
+    
+    #add the embedding values to the matching graph
+    g_temp <- multi_quintet[[as.integer(graph_data[6])]] %>%
+      set_vertex_attr(., "dimension_1", value =  csv_df %>% pull(1)) %>%
+      set_vertex_attr(., "dimension_2", value =  csv_df %>% pull(2))
+    
+    #create dataframe to perform linear separation analysis on
+    test_df <- as_data_frame(g_temp, what = "vertices") %>%
+      mutate(class = factor(class),
+             sub_class = factor(sub_class)) %>%
+      mutate(embeddings_method = graph_data[1],
+             embeddings_dimensions = graph_data[3],
+             graph_id = as.integer(graph_data[6]),
+             type = str_remove(graph_data[8], pattern = ".csv"))
+   
+    
+  }) %>%
+  group_by(embeddings_method, graph_id, type, embeddings_dimensions) %>%
+  summarise(dimension_1 = mean(dimension_1),
+            dimension_2 = mean(dimension_2))
+
+
+GEM_embeds_agg %>%
+  ggplot(aes(x = dimension_1, y = dimension_2, colour = type)) + 
+  geom_point() +
+  facet_wrap(~embeddings_method)
+
+
+```
+
+
+```{r}
+
+node_data2 <- readRDS(file.path(PLwd, "node_data2.rds"))
+
+#why are there apparently double rows? what is happening with the detected communities dataframe
+SETSe_embeds <- 1:500 %>%
+  map_df(~{
+    
+    test_df <- node_data2 %>%
+      filter(graph_id == .x) %>%
+      mutate(class = factor(class),
+             sub_class = factor(sub_class)) %>%
+      rename(dimension_1 = elevation, 
+             dimension_2 = tension_mean)
+    
+    #class_mod <- svm(class ~  dimension_2, test_df, kernel = "linear")
+    class_mod <- vglm(class ~ dimension_1 + dimension_2, family=multinomial, data = test_df)
+    
+    #sub_mod <- svm(sub_class ~  dimension_2, test_df, kernel = "linear")
+    sub_mod <- vglm(sub_class ~ dimension_1 + dimension_2, family=multinomial, data = test_df)
+    
+    class_preds_vect <- predict(class_mod, decision.values = TRUE, type = "response") %>% { colnames(.)[apply(., 1, which.max)]}
+    sub_preds_vect <- predict(sub_mod, decision.values = TRUE, type = "response") %>% { colnames(.)[apply(., 1, which.max)]}
+    
+        test_df <- test_df %>%
+      mutate(class_preds =  factor(class_preds_vect, levels = c("A", "B")),
+             sub_preds  = factor(sub_preds_vect, levels = c("A_1", "A_2", "B_1", "B_2")))
+        
+    # test_df <- test_df %>%
+    #   mutate(class_preds = predict(class_mod, decision.values = TRUE),
+    #          sub_preds  = predict(sub_mod, decision.values = TRUE))
+    
+    bind_rows(peels_metrics(test_df, truth = class, estimate = class_preds) %>%
+                mutate(model_type = "class"),
+              peels_metrics(test_df, truth = sub_class, estimate = sub_preds)%>%
+                mutate(model_type = "sub_class")
+    ) %>%
+      mutate(embeddings_method = "SETSe",
+             embeddings_dimensions = "2",
+             graph_id = as.integer(.x),
+             type = unique(test_df%>% pull(graph_class)))
+    
+    
+  })
+
+
+node_data_agg <-node_data2 %>%
+  rename(type = graph_class) %>%
+  group_by(graph_id, type) %>%
+  summarise(dimension_1 = mean(tension_mean), 
+            dimension_2 = mean(abs(elevation))) %>%
+  ungroup %>%
+      mutate(embeddings_method = "SETSe",
+             embeddings_dimensions = "2",
+             graph_id = as.integer(graph_id))
+
+
+```
+
+```{r}
+
+node2vec_embeds <- list.files(file.path(PLwd, "node2vec_embeddings"), full.names = TRUE)
+
+node_perf <- node2vec_embeds %>%
+  map_df(~{
+    
+      print(.x)
+    embedded_path <- .x#embedded_files[50]
+    
+    #split the file name to get the graph information
+    graph_data <- str_split(basename(embedded_path), pattern = "_", simplify = T )
+    
+    #read the csv in from the folder
+    csv_df <- read.table(embedded_path, header = FALSE, sep = " ", skip = 1) %>%
+      mutate(V1 = str_remove(V1, "n") %>% as.integer() %>%{as.character(.+1)})
+    
+    #add the embedding values to the matching graph
+    g_temp <- multi_quintet[[as.integer(graph_data[7])]] #%>%
+     # set_vertex_attr(., "dimension_1", value =  csv_df %>% pull(1)) %>%
+     # set_vertex_attr(., "dimension_2", value =  csv_df %>% pull(2))
+    
+    #create dataframe to perform linear separation analysis on
+    test_df <- as_data_frame(g_temp, what = "vertices") %>%
+      left_join(csv_df, by = c("node"="V1")) %>%
+    rename(dimension_1 = V2, dimension_2 = V3) %>%
+      mutate(class = factor(class),
+             sub_class = factor(sub_class))
+    
+    #class_mod <- svm(class ~  dimension_2, test_df, kernel = "linear")
+    class_mod <- vglm(class ~ dimension_1 + dimension_2, family=multinomial, data = test_df)
+    
+    #sub_mod <- svm(sub_class ~  dimension_2, test_df, kernel = "linear")
+    sub_mod <- vglm(sub_class ~ dimension_1 + dimension_2, family=multinomial, data = test_df)
+    
+    class_preds_vect <- predict(class_mod, decision.values = TRUE, type = "response") %>% { colnames(.)[apply(., 1, which.max)]}
+    sub_preds_vect <- predict(sub_mod, decision.values = TRUE, type = "response") %>% { colnames(.)[apply(., 1, which.max)]}
+    
+        test_df <- test_df %>%
+      mutate(class_preds =  factor(class_preds_vect, levels = c("A", "B")),
+             sub_preds  = factor(sub_preds_vect, levels = c("A_1", "A_2", "B_1", "B_2")))
+        
+    # test_df <- test_df %>%
+    #   mutate(class_preds = predict(class_mod, decision.values = TRUE),
+    #          sub_preds  = predict(sub_mod, decision.values = TRUE))
+    
+    bind_rows(peels_metrics(test_df, truth = class, estimate = class_preds) %>%
+                mutate(model_type = "class"),
+              peels_metrics(test_df, truth = sub_class, estimate = sub_preds)%>%
+                mutate(model_type = "sub_class")
+              ) %>%
+      mutate(embeddings_method = graph_data[1],
+             embeddings_dimensions = graph_data[4],
+             graph_id = as.integer(graph_data[7]),
+             type = str_remove(graph_data[9], pattern = ".csv"))
+    
+    
+  })
+
+
+
+
+n2v_embeds_agg <-  node2vec_embeds %>%
+  map_df(~{
+    
+    print(.x)
+    embedded_path <- .x#embedded_files[50]
+    
+    #split the file name to get the graph information
+    graph_data <- str_split(basename(embedded_path), pattern = "_", simplify = T )
+    
+    #read the csv in from the folder
+    csv_df <- read.table(embedded_path, header = FALSE, sep = " ", skip = 1) %>%
+      mutate(V1 = str_remove(V1, "n") %>% as.integer() %>%{as.character(.+1)})
+    
+    #add the embedding values to the matching graph
+    g_temp <- multi_quintet[[as.integer(graph_data[7])]] 
+    
+    #create dataframe to perform linear separation analysis on
+    test_df <- as_data_frame(g_temp, what = "vertices") %>%
+      left_join(csv_df, by = c("node"="V1")) %>%
+    rename(dimension_1 = V2, dimension_2 = V3) %>%
+      mutate(class = factor(class),
+             sub_class = factor(sub_class))%>%
+      mutate(embeddings_method = graph_data[1],
+             embeddings_dimensions = graph_data[4],
+             graph_id = as.integer(graph_data[7]),
+             type = str_remove(graph_data[9], pattern = ".csv"))
+   
+    
+  }) %>%
+  group_by(embeddings_method, graph_id, type, embeddings_dimensions) %>%
+  summarise(dimension_1 = mean(dimension_1),
+            dimension_2 = mean(dimension_2))
+
+
+bind_rows(GEM_embeds_agg, n2v_embeds_agg, node_data_agg) %>%
+  group_by(embeddings_method) %>%
+  mutate(dimension_1 = (dimension_1-min(dimension_1))/(max(dimension_1)-min(dimension_1)),
+         dimension_2 = (dimension_2-min(dimension_2))/(max(dimension_2)-min(dimension_2))) %>%
+  # mutate(dimension_1 = (dimension_1-mean(dimension_1))/sd(dimension_1),
+  #        dimension_2 = (dimension_2-mean(dimension_2))/sd(dimension_2)) %>%
+  ggplot(aes(x = dimension_1, y = dimension_2, colour = type)) + 
+  geom_point() +
+  facet_wrap(~embeddings_method) +
+  labs(title = "Seperating Peel's Quintet in 2 dimensions",
+       x = "dimension 1 (Tension for SETSe)",
+       y = "dimension 2 (elevation for SETSe)")
+ggsave(file.path(FiguresFolder, "Seperating_Peels_quintet.pdf"))
+
+```
+
+
+#compare methods
+
+```{r}
+
+#accuracy plot
+bind_rows(GEM_embeds, SETSe_embeds, node_perf) %>%
+  filter(.metric =="accuracy") %>%
+  ggplot(aes(x = embeddings_method, y = .estimate, fill = embeddings_method)) + geom_boxplot()+
+  facet_wrap(type~model_type)  +
+  guides(fill=FALSE) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(title = "Comparison of graph embeddings methods for class identification on Peel's Quintet",
+       y = "Accuracy of linear seperability",
+       x = "Embeddings method")
+      ggsave(file.path(FiguresFolder,  "peels_embedding_linear_sep.pdf"))        
+
+#linearly seperably plot
+linear_sep <- bind_rows(GEM_embeds, SETSe_embeds, node_perf)%>%
+  filter(.metric =="accuracy") %>%
+  mutate(linear_sep = .estimate ==1) %>%
+  group_by(embeddings_method, type, model_type) %>%
+  summarise(fract = sum(linear_sep)/n()) 
+
+linear_sep %>%
+  ggplot(aes(x = embeddings_method, y = fract, fill = embeddings_method)) + geom_col() +
+  facet_wrap(type~model_type)  +
+  guides(fill=FALSE) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(title = "Comparison of graph embeddings methods for class identification on Peel's Quintet",
+       y = "Accuracy of linear seperability",
+       x = "Embeddings method")
+
+
+
+
+
+```
+
+#What is going on with SDNE?
+the SDNE values are all 0
+
+```{r}
+include<-grepl(embedded_files, pattern = "SDNE")
+test <- 1:sum(include) %>%
+  map_df(~{
+    
+    print(.x)
+    embedded_path <- embedded_files[include][.x]#embedded_files[50]
+    
+    #split the file name to get the graph information
+    graph_data <- str_split(basename(embedded_path), pattern = "_", simplify = T )
+    
+    #read the csv in from the folder
+    csv_df <- read.csv(embedded_path, header = FALSE) #col_names = FALSE)
+     
+   csv_df %>%
+     summarise_all(~sum(abs(.)))
+    
+  })
+```
+

@@ -7,48 +7,16 @@ editor_options:
   chunk_output_type: console
 ---
 
-##get memory usage on HPC
 
-$ /usr/bin/time --verbose ./my_program
-	Command being timed: "./my_program"
-	User time (seconds): 69.03
-	System time (seconds): 0.06
-	Percent of CPU this job got: 3494%
-	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:01.97
-	Average shared text size (kbytes): 0
-	Average unshared data size (kbytes): 0
-	Average stack size (kbytes): 0
-	Average total size (kbytes): 0
-	Maximum resident set size (kbytes): 956      <---- this number here
-	Average resident set size (kbytes): 0
-	Major (requiring I/O) page faults: 0
-	Minor (reclaiming a frame) page faults: 350
-	Voluntary context switches: 8
-	Involuntary context switches: 1823
-	Swaps: 0
-	File system inputs: 0
-	File system outputs: 0
-	Socket messages sent: 0
-	Socket messages received: 0
-	Signals delivered: 0
-	Page size (bytes): 4096
-	Exit status: 0
-	
-	
-	comments from Heatgher Kelly
-	
-	you replace 'my_program' with what you are trying to run (edited) 
-5:01
-and the $ is just the prompt
-5:03
-(Is also in the how to page in our docs, 'How do I estimate what resources to request in my jobscript?' and I think I linked it from the top of the example scripts page)
-5:04
-so if you're running R, you put your whole normal R runline after the --verbose
+```{r}
+library(e1071)
+```
+
 
 #Set up
 ```{r Setup}
 
-packages <- c("tidyverse", "igraph","readr","readxl", "broom", "stringr", "xtable", "rlang", "latex2exp", "yardstick", "minpack.lm", "ggraph", "patchwork", "rsample", "VGAM", "class", "mclust", "R.matlab")
+packages <- c("tidyverse", "igraph","readr","readxl", "broom", "stringr", "xtable", "rlang", "latex2exp", "yardstick", "minpack.lm", "ggraph", "patchwork", "rsample", "VGAM", "class", "mclust", "R.matlab", "ranger")
 
 new.packages <- packages[!(packages %in% installed.packages()[,"Package"])]
 if(length(new.packages)) install.packages(new.packages)
@@ -109,12 +77,14 @@ source(file = file.path(SubcodeFolder, "process_peel_strain.R"))
 
 peel_strain_sum %>%
   filter(k==0) %>%
-  ggplot(aes(x = mean_tension_per_node, y = mean_abs_elevation, colour = graph_type)) + geom_point(alpha = 0.8) +
-  labs(title = "Separating Peel's quintet using embedded height and strain",
+  group_by(graph_id, graph_type) %>%
+  summarise_if(is.numeric, ~mean(abs(.x))) %>%
+  ggplot(aes(x = mean_tension, y = elevation, colour = graph_type)) + geom_point(alpha = 0.8) +
+  labs(title = "Separating Peel's quintet using elevation and strain",
        x = "Mean node average edge strain",
-       y = "Mean node height of class A",
+       y = "Mean node elevation of class A",
        colour = "graph type")
-  ggsave(file.path(FiguresFolder, "Seperating_Peels_quintet.pdf"))
+ # ggsave(file.path(FiguresFolder, "Seperating_Peels_quintet.pdf"))
 #This demonstrates that the algorithm is topologically sensitive.
 #Multiclass groups may be seperable using the 1 vs all method common in multiclass logitic regression, then seperating in a dimensional space equivalent to 2*(number of classes -1), that is beyond the scope of the paper.
 
@@ -122,22 +92,26 @@ peel_strain_sum %>%
 
 ##Peel knn
 
+
+THIS SECTION IS NOT NECCESSARY AS THE graphs are linearly seperable.
+
 This tests the accuracy of the classifier created by a knn and a multinomial logistic regression.
 It shows that strain and elevation can accurately classify the graph types
 
 accuract of the knn is about 83% and 84%. N.B the old data was higher (95% and 97%), but group B had a massive strain spread which was probably an error.%
 ```{r}
-#This needs to use some save files becuase it takes ages
-source(file = file.path(SubcodeFolder, "model_basic_peels.R"))
-
-nearest_k_results %>%
-  ggplot(aes(x = k, y = accuracy )) + 
-  geom_line() +
-  labs(title = "The mean accuracy for 100 repeats of 10 fold cross validation for knn classifier", 
-       y = "mean accuracy",
-       x ="nearest neighbours")
-#this file path is for casa presentation. delete after
-ggsave(file.path(FiguresFolder, "knn_accuracy.pdf"))
+# #This needs to use some save files becuase it takes ages
+# source(file = file.path(SubcodeFolder, "model_basic_peels.R"))
+# 
+# #Accuracy is between 95% and 96% for all values of k between 1 and ten
+# nearest_k_results %>%
+#   ggplot(aes(x = k, y = accuracy )) + 
+#   geom_line() +
+#   labs(title = "The mean accuracy for 100 repeats of 10 fold cross validation for knn classifier", 
+#        y = "mean accuracy",
+#        x ="nearest neighbours")
+# #this file path is for casa presentation. delete after
+# ggsave(file.path(FiguresFolder, "knn_accuracy.pdf"))
 
 
 ```
@@ -158,7 +132,7 @@ ggsave(file.path(FiguresFolder, "strength_effect.pdf"))
 peel_strain_sum %>%
   filter(
   ) %>%
-  ggplot(., aes( x= tension, y = elevation, colour = as.factor(k))) + geom_point(alpha = 0.5) +
+  ggplot(., aes( x= mean_tension_per_node, y = mean_abs_elevation, colour = as.factor(k))) + geom_point(alpha = 0.5) +
   facet_wrap(~graph_type, scales = "free_y")
 
 
@@ -236,7 +210,7 @@ saveRDS(setse_3d, file.path(PLwd, "setse_3d.rds"))
 }
 
   setse_3d %>%
-  ggplot(aes(x = tension, y = elevation, colour = graph_type)) + geom_point()
+  ggplot(aes(x = mean_tension_per_node, y = mean_euc_elev, colour = graph_type)) + geom_point()
 
 peel_strain_sum <- list.files(file.path(PLwd, "peel_strain_files"), full.names= T) %>% 
   map_df(~{
@@ -266,6 +240,11 @@ ggsave(file.path(FiguresFolder, "Seperating_Peels_quintet.pdf"))
 
 In this section I analyse the facebook 100 dataset. I got this from https://archive.org/details/oxford-2005-facebook-matrix
 
+delete all nodes that graduated before 2004 and after 2009
+keep only student types 1 and 2
+
+normalise edge force to some fixed value e.g. 0.001 per edge
+
 ```{r}
 
 
@@ -273,7 +252,7 @@ In this section I analyse the facebook 100 dataset. I got this from https://arch
 #this is commented out as it takes a long time and checking to see if the files are generated has not been done.
 #source(file = file.path(SubcodeFolder, "convert_facebook_files.R"))
 
-uni_files <-list.files("/home/jonno/setse_1_data/facebook100/facebook100_igraph", full.names = T)
+uni_files <- list.files("/home/jonno/setse_1_data/facebook100/facebook100_igraph", full.names = T)
 
 
 #Create the biconnected data for the graphs with the time it takes to calculate.
@@ -282,192 +261,6 @@ source(file = file.path(SubcodeFolder, "facebook_biconnected.R"))
 #This data frame shows that all uni's have a connected component of over 99%
 #the smaller components can be disgarded
 source(file = file.path(SubcodeFolder, "create_facebook_uni_stats.R"))
-
-file_paths <-list.files("/home/jonno/setse_1_data/facebook100/facebook100_biconnected", full.names = T)
-biconnected_data <- 1:length(file_paths) %>%
-  map_df(~{
-    
-    print(file_paths[.x])
-    test <-readRDS(file_paths[.x])
-    
-    component_size <- (test$components) %>% map_dbl(length)
-    
-    tibble(
-      file_name =  basename(uni_files[.x]) %>% str_remove(., ".rds"),
-      total = test$no, 
-      time = test$time,
-      max_size = max(component_size),
-      min = min(component_size),
-      mean_size = mean(component_size),
-      median_size = median(component_size),
-      component_over_two = sum(component_size>2))
-    
-  })
-
-
-test2 <- left_join(uni_stats, biconnected_data) %>% as_tibble() %>%
-  mutate(max_size_ratio = max_size/nodes) %>%
-  select(uni_name:edges, total:max_size_ratio, density) %>%
-  select(uni_name:nodes, max_size, max_size_ratio, everything()) %>%
-  mutate(time_node = time/nodes)
-
-test2 %>%
-ggplot(aes(x =nodes, y = time)) + geom_point()
-
-
-test <- 1:length(bigraph$components) %>%
-map_df(~tibble(number = .x, 
-               present = 1024 %in% as.integer(bigraph$components[[.x]]),
-               size = length(bigraph$components[[.x]])))
-
-#This creates year embeddings for all the facebook data. 
-#It is commented out as the code is does not check if the file has been made
-source(file = file.path(SubcodeFolder, "facebook_embeddings_year.R"))
-
-file_paths <- list.files("/home/jonno/setse_1_data/facebook_embeddings/facebook_year", full.names = T)
-facebook_embeddings_data <- 1:length(file_paths) %>% #c(1,2,4,5) %>%
-  map(~{
-
-  #readRDS(.x)
-    print(.x)
-    file_name <- basename(file_paths)[.x]
-    readRDS(file_paths[.x]) %>%
-      flatten() %>%
-      map(~{
-      # if(sum(class(.x) %in% "data.frame")>0){
-
-      Out <-  .x %>% mutate(file_name = str_remove(file_name, ".rds"))
-      #   } else {
-      #   
-      #     Out <- .x
-      # }
-
-        return(Out)
-      })
-    
-  }) %>% transpose() 
-
-
-  facebook_embeddings_data$network_dynamics %>%
-  bind_rows() %>%
-    left_join(uni_stats, by = c("file_name")) %>%
-  ggplot(aes(x = Iter, y = log10(static_force))) + geom_jitter()
-  
-  
-  
-  #the time taken for an iteration is linear with the product of edges and nodes
-
-  time_taken_iter <-left_join(facebook_embeddings_data$time_taken %>%
-    bind_rows(),
-  facebook_embeddings_data$bicomp_data %>%
-    bind_rows() ) %>%
-    mutate(time_taken = as.numeric(time_taken)) %>%
-    left_join(., 
-              facebook_embeddings_data$network_dynamics %>%
-  bind_rows() %>%
-    group_by(file_name) %>%
-    summarise_all(last)
-  ) %>%
-    filter(nodes>100) %>%
-    mutate(time_per_iter = time_taken/Iter,
-           node_x_edge = nodes*edges)
-  
-  time_taken__iter_mod <- lm(time_per_iter~node_x_edge, time_taken_iter)
-summary(time_taken__iter_mod)
-
-box_cox_data_iter <- MASS::boxcox(time_taken__iter_mod, lambda = seq(-3, 3, 1/100))
-
-tibble(lambda = box_cox_data_iter$x, log_likelihood = box_cox_data_iter$y) %>%
-  arrange(-log_likelihood)
-  
-  time_taken_iter %>%
-    ggplot(aes(x = nodes*edges, y = time_per_iter, colour = log10(edges*nodes))) + geom_point()+
-    scale_color_viridis_c()
-  
-
-facebook_embeddings_data$node_detail %>%
-    bind_rows() %>%
-  filter(grepl("Simmons", file_name),
-         (year %%1 == 0)) %>%
-  ggplot(aes(x = (mean_tension), y = (elevation), colour = factor(year))) + geom_jitter()
-
-
-#The time taken to convergence appears to be quadratic aka O(2) time. 
-#This is very encouraging! Although it should be noted there is quite a lot of variation
-#which is dependent on the topology of the network.. maybe related to elevation or tension? 
-#this could be related to the communities that form
-time_taken_df <- facebook_embeddings_data$time_taken %>%
-  bind_rows() %>%
-  left_join(uni_stats,. , by = c("file_name")) %>%
-  select(-nodes,-edges) %>%
-  left_join(.,   facebook_embeddings_data$bicomp_data %>%
-    bind_rows()) %>%
-  mutate(diff = as.numeric(time_taken),
-         diff2 = diff^(0.15),
-         node_x_edge = nodes*edges
-         ) %>%
-  filter(nodes >10)
-
-time_taken_df %>%
-  ggplot(aes(x = nodes, y = (diff) )) + geom_point()+
-  labs(title ="time to convergence is O(5) time relative to nodes or edge for social networks",
-       subtitle = "however the data appear slightly heteroscedastic")
-#The relationship is not exponential as can be demonstrated using a simple test on exponential vs quadratic toy data
-time_taken_mod <- lm(diff~node_x_edge, time_taken_df)
-summary(time_taken_mod)
-
-#This model is much better
-time_taken_mod2 <- lm(diff2~node_x_edge, time_taken_df)
-summary(time_taken_mod2)
-
-box_cox_data <-MASS::boxcox(time_taken_mod, lambda = seq(-3, 3, 1/100))
-
-tibble(lambda = box_cox_data$x, log_likelihood = box_cox_data$y) %>%
-  arrange(-log_likelihood)
-
-file_paths <- list.files("/home/jonno/setse_1_data/facebook_embeddings/facebook_year", full.names = T)
-
-test <- 1:length(file_paths) %>%
-  map_df(~{
-    
-    file_name <- file_paths[.x]
-    
-    test <- readRDS(file_name)
-    
-    elevation_data <-test$embeddings_data$node_embeddings %>%
-      summarise(mean_abs_elev = mean(abs(elevation)),
-                mean_pos_elev = mean(ifelse(elevation>0, elevation, NA),na.rm = T),
-                median_abs_elev = median(abs(elevation)),
-                median_pos_elev = median(ifelse(elevation>0, elevation, NA),na.rm = T),
-                euc_elev = sqrt(sum(elevation^2)),
-                max_abs_static_force = max(abs(static_force)),
-                min_abs_static_force = min(abs(static_force)),
-                range_static_force = max(static_force)-min(static_force),
-                static_force = sum(abs(static_force)),
-                students = n())
-    
-    strain_tension <- test$embeddings_data$edge_embeddings %>%
-      summarise(
-        sum_tension = sum(tension),
-        mean_tension = mean(tension),
-        mean_strain = mean(strain),
-        median_tension = median(tension),
-        median_strain = median(strain),
-        euc_tension = sqrt(sum(tension^2)),
-        edges = n())
-    
-    Out <- bind_cols(elevation_data, strain_tension) %>%
-      mutate(file_ext = basename(file_name),
-             uni_name = file_ext %>% str_remove(., ".rds") %>% str_remove(., "[0-9]+"),
-             data_id = file_ext %>% str_remove(., ".rds") %>% str_remove(., "[ a-zA-Z]+") %>% str_remove(., " ")) %>%
-      select(uni_name, data_id, file_ext, everything())
-    
-  })
-
-
-test %>% 
-ggplot(aes(x = max_abs_static_force, y =static_force, color = edges))+ geom_point()+
-  scale_colour_viridis_c()
 
 #I will use dorms over 0.5% of the total known university populations
 #I will use years with over 1% of the population the rest will be reset to the mean of the students to not exert force
@@ -478,141 +271,755 @@ ggplot(aes(x = max_abs_static_force, y =static_force, color = edges))+ geom_poin
 #alternative use the euclidean distance of the mean of all positive force for the uni as a whole.
 #This can be combined with the euclidean distance of the mean tension for a two dimensional projection
 
-uni_stats %>%
-  arrange(nodes) %>%
-  pull(uni_name)
+test2 <- left_join(uni_stats, biconnected_data) %>% as_tibble() %>%
+  mutate(max_size_ratio = max_size/nodes) %>%
+  select(uni_name:edges, total:max_size_ratio, density) %>%
+  select(uni_name:nodes, max_size, max_size_ratio, everything()) %>%
+  mutate(time_node = time/nodes)
 
-test2 <- test %>% transpose()
+#This creates year embeddings for all the facebook data. 
+#It is commented out as the code is does not check if the file has been made
+#source(file = file.path(SubcodeFolder, "facebook_embeddings_year.R"))
 
-#simmons has more concentrated tension and mean distribution that Caltech
-#Caltech has a higher elevation and tension per yeat
-test2$node_detail %>% bind_rows()  %>%
-  ggplot(aes(x = mean_tension, y = elevation, colour = year)) + 
-  geom_point(alpha = 0.5) + facet_wrap(~uni)+
-  scale_color_viridis_c()+
-  labs(title = "Each student student at Caltech and Simmons projected into elevation
-       and mean node tension, colour is year started at uni",
-       x = "mean tension of all edges connected to node",
-       y = "node elevation")
-
-test2$node_detail %>% bind_rows()  %>%
-  filter(as.factor(year) %in% factor(c(2004, 2005, 2006,2007, 2008, 2009))) %>%
-  ggplot(aes(x = mean_tension, y = elevation, colour = uni)) + 
-  geom_point(alpha = 0.5) + facet_wrap(~as.factor(year)) 
-
-test2$node_detail %>% bind_rows()  %>%
-  ggplot(aes(x = (mean_tension))) + geom_density()+ facet_wrap(~uni)
-
-test2$node_detail %>% bind_rows() %>%
-  ggplot(aes(x = factor(uni), y = log10(mean_tension))) + 
-  geom_boxplot()
+source(file = file.path(SubcodeFolder, "process_facebook_embeddings.R"))
 
 
-test3 <- test2$embeddings_data %>%
-  transpose() %>%{.$network_dynamics} 
+```
 
-bind_rows(test3[[1]] %>% mutate(uni ="Caltech"),
-          test3[[2]] %>% mutate(uni ="Simmons")) %>%
-  ggplot(aes(x = Iter, y = log10(static_force), colour = uni)) + geom_line()
-
-  uni_pattern <- grep("Simmons",uni_files )
-
-test_stan$network_dynamics %>%
-#  filter(Iter< 1500) %>%
-  ggplot(aes(x = Iter, y = log10(static_force))) +
-  geom_line()
-
-g <- readRDS(uni_files[uni_pattern]) %>% #load file
-  remove_small_components() %>% #remove unconnected components
-  prepare_SETSe_binary(., k = 1000, force_var = "dorm", positive_value = 167, distance = 1 ) #prepare for projection
+##100 tension elevation
+This plots the tension and elevation for all the uni's in the facebook
+```{r}
 
 
-test2 <- readRDS(uni_files[uni_pattern]) %>%
- prepare_SETSe_binary(., k = 1000, force_var = "dorm", positive_value = 167, distance = 100000 ) %>%
-   auto_SETSe2(., tstep = 0.1, verbose = TRUE)
 
-test2$network_dynamics %>%
- # filter(Iter< 1500) %>%
-  ggplot(aes(x = Iter, y = log10(static_force))) +
-  geom_line()
-
-
-  Prep <- SETSe_data_prep(g = g, 
-                          force = "force", 
-                          distance = "distance", 
-                          mass = 1, 
-                          edge_name = "edge_name",
-                          k = "k",
-                          sparse = T)
+  node_details_df <- readRDS(
+    file.path("/home/jonno/setse_1_data/facebook_embeddings/processed_embeddings",
+                                       "facebook_node_detail.rds" )) %>%
+    mutate(abs_elevation = abs(elevation)) %>%
+    group_by(file_name) %>%
+    summarise_at(., vars(sum_tension:elevation , abs_elevation), mean) %>%
+    left_join(uni_stats, by = "file_name")
   
-as(Adj, "dgTMatrix") %>%str
-  
-   uni_pattern <- grep("Caltech", uni_files )
-    
-    g <- readRDS(uni_files[uni_pattern])  %>% #load file
-      remove_small_components()  %>%
-      facebook_year_clean() %>% prepare_SETSe_continuous(., k = 1000, force_var = "year", 
-                                                         sum_to_one = FALSE, 
-                                                         distance = 1) %>%
-      set_edge_attr(., "flow", value = 1)
-    
-    
-    
-    
-      Prep2 <- SETSe_data_prep2(g = g, 
-                          force = "force", 
-                          distance = "distance", 
-                          mass = 1, 
-                          edge_name = "edge_name",
-                          k = "k",
-                          sparse = T)
-      
-      Prep <- SETSe_data_prep(g = g, 
-                              force = "force", 
-                              flow = "flow",
-                              distance = "distance", 
-                              mass = 1, 
-                              edge_name = "edge_name",
-                              k = "k",
-                              sparse = T)
-      
-      
-      head(Prep$non_empty_matrix) ;head(Prep2$non_empty_matrix)
-      
-      test <- Prep$non_empty_matrix %>% as_tibble
-      test2 <- Prep2$non_empty_matrix %>% as_tibble
-      
-      test %>% filter(cols == 1) %>%
-        arrange(rows)
-      
-      test2 %>% filter(cols == 1) %>%
-        arrange(rows)
-      
-      all.equal(Prep$non_empty_matrix, Prep2$non_empty_matrix)
-    
-      
-      
-    embeddings_data <- auto_SETSe(g, tstep = 0.001, verbose = TRUE, sparse = F, sample = 100)
 
-   bind_rows( embeddings_data$node_embeddings %>%
-                mutate(type = "old"),
-    embeddings_data2$node_embeddings %>%
-               mutate(type ="new")
-    
-    ) %>%
-     select(node, type, value = elevation) %>%
-     pivot_wider(names_from = type, values_from = value) %>%
-     ggplot(aes(x = old, y = new)) + geom_point()
+test <- cor(node_details_df %>% select(sum_tension:euc_tension, abs_elevation, contains("assort")))# %>% as_tibble()
   
+  #plot the facebook uni's by elevation and tension
+#There is no relationship with size of uni which is good.
+#there is a relationship between tension and elevation, which is less good I guess
+#question is how does this relate to student housing 
+
+#highlighting auburb main and michigen is a good idea to show how the assortativity of similar uni's is very separate
+relate_figure <-  node_details_df %>%
+    ggplot(aes(y = abs_elevation, x = mean_tension, colour = year_assort, text = file_name)) + geom_point() + 
+    scale_color_viridis_c() +
+    labs(title = "The average elevation and tension embeddings of the facebook 100 dataset.",
+         y = "absolute mean elevation per node",
+         x = "The mean of the per node tension",
+         color = "class\nassortativity")
+
+relate_figure 
+ggsave(file.path(FiguresFolder, "facebook_100_elev_tens.pdf"))
+
+ggplotly(relate_figure)
+
+node_details_df %>% ggplot(aes(x = student_assort)) + geom_density()
+
+  #the year assortativity of the model can be predicted by the below linear model
+  lm(year_assort ~ abs_elevation , node_details_df) %>% summary()
+  lm(year_assort ~  mean_tension, node_details_df) %>% summary()
+  
+  assort_mod <- lm(year_assort ~ abs_elevation + mean_tension, node_details_df)
+  summary(assort_mod)
+  #It appears that a linear model predicting gender assortativity on the year embedding
+  #has a stronger relationship than the straight corellation between gender and year assortativty.
+  assort_mod <- lm(student_assort ~ abs_elevation + mean_tension + euc_tension, node_details_df)
+  summary(assort_mod)
+  #the linear model predicting gender assortyativity from year is nothing
+    lm(gen_assort ~ year_assort, node_details_df) %>% summary
+    
+  
+  node_details_df %>%
+    ggplot(aes(y = abs_elevation, x = euc_tension, colour = gen_assort)) + geom_point() + 
+    scale_color_viridis_c() 
+  
+    node_details_df %>%
+    ggplot(aes(y = student_assort, x = year_assort, colour = gen_assort)) + geom_point() + 
+    scale_color_viridis_c() 
+
+  cor(node_details_df$mean_tension, node_details_df$abs_elevation)
+  #euclidean tension has a substantially higher corellation
+  cor(node_details_df$euc_tension, node_details_df$abs_elevation)
+  
+   node_details_df %>%
+    ggplot(aes(x = mean_tension)) +
+     geom_density()
+
    
-   head(embeddings_data$node_embeddings$elevation)
-    head(embeddings_data2$node_embeddings$elevation)
    
+```
+
+##time memory complexity
+
+This chunk shows that the iteration time complexity and the network memory demands are linear with the number of edges in the network.
+
+```{r}
+
+fb_network_dynamics <- readRDS(file.path("/home/jonno/setse_1_data/facebook_embeddings/processed_embeddings", "facebook_network_dynamics.rds" ))
+
+#This is interesting but not very useful
+  # fb_network_dynamics %>%
+  #   left_join(uni_stats, by = c("file_name")) %>%
+  # ggplot(aes(x = Iter, y = log10(static_force))) + geom_jitter()
+
+
+#the time taken for an iteration is linear with the product of edges and nodes
+
+  time_taken_df <- readRDS(file.path("/home/jonno/setse_1_data/facebook_embeddings/processed_embeddings", "facebook_time_taken.rds" )) %>%
+    mutate(time_taken = as.numeric(time_diff)) %>%
+    left_join(., 
+              fb_network_dynamics %>%
+  bind_rows() %>%
+    group_by(file_name) %>%
+    summarise_all(last)
+  ) %>%
+    filter(nodes>=100) %>%
+    mutate(time_per_iter = time_taken/Iter,
+           node_x_edge = nodes*edges,
+           node_x_edge2 = sqrt(nodes*edges),
+           log_node_x_edge = log(node_x_edge),
+           log_time_per_iter = log(time_per_iter),
+           log_time_taken = log(time_taken),
+           log_edges = log(edges))
+  
+  time_taken__iter_mod <- lm(time_per_iter~edges, time_taken_df)
+summary(time_taken__iter_mod)
+#100kth of a second time increase per edge
+
+box_cox_data_iter <- MASS::boxcox(time_taken__iter_mod, lambda = seq(-3, 3, 1/100))
+
+tibble(lambda = box_cox_data_iter$x, log_likelihood = box_cox_data_iter$y) %>%
+  arrange(-log_likelihood)
+  
+#actuall time per iteration seems to be linear to the number of edges
+  time_taken_df %>%
+    ggplot(aes(x = edges, y = time_per_iter, colour = )) + geom_point()+
+    scale_color_viridis_c()+
+    labs(title = "SETSe time per iteration",
+         y = "seconds per iteration",
+         x = "number of edges in graph")
+  
+  
+  
+
+
+#The time taken to convergence appears to be quadratic aka O(2) time. 
+#This is very encouraging! Although it should be noted there is quite a lot of variation
+#which is dependent on the topology of the network.. maybe related to elevation or tension? 
+#this could be related to the communities that form
+
+time_taken_df %>%
+  ggplot(aes(x = edges*log(edges), y = time_taken )) + geom_point()+
+  labs(title ="Time to convergence is heteroscedastic for the facebook social networks",
+       y = "minutes to convergence",
+       x = "number of edges")
+#The relationship is not exponential as can be demonstrated using a simple test on exponential vs quadratic toy data
+time_taken_mod <- lm(time_taken~edges, time_taken_df)
+time_taken_mod2 <- lm(log_time_taken~log_edges, time_taken_df)
+summary(time_taken_mod)
+summary(time_taken_mod2)
+
+box_cox_data <-MASS::boxcox(time_taken_mod, lambda = seq(-3, 3, 1/100))
+
+tibble(lambda = box_cox_data$x, log_likelihood = box_cox_data$y) %>%
+  arrange(-log_likelihood)
+
+
+file_paths <- list.files("/home/jonno/setse_1_data/facebook_embeddings/memory", full.names = T)
+
+test <- 1:length(file_paths) %>% map_df(~{
+  
+
+ file_number_to_open <-grep(paste0("\\.", .x, "$"), file_paths)
+
+ file_name <- file_paths[file_number_to_open]
+
+ print_data <- read_lines(file_name)
+
+tibble( Mbytes = print_data[grep("Maximum resident set size", print_data)] %>% str_extract(., "[0-9]+") %>% as.numeric()/1000, 
+       file_id = basename(file_name) %>% str_remove(., "facebook.e3692260.") %>% as.numeric())
+
+}) 
+
+test <- test %>% bind_cols(., uni_stats %>% arrange(nodes) %>% slice(1:nrow(test)))
+
+test %>%
+ggplot(aes(x = edges, y =Mbytes)) + geom_point()+
+  labs(title = "Memory requirements vs number of edges.",
+      subtitle = "Memory requirements are broadly linear, although there is some heteroscedasticity")
+
+memory_mod <- lm(Mbytes~edges, test)
+#1.2kb per edge ram requirement
+
+summary(memory_mod)
+ MASS::boxcox(memory_mod, lambda = seq(-3, 3, 1/100))
+
 ```
 
 
 
-#facebook biconnecected test
+```{r}
+uni_stats2 <-1:length(uni_files) %>%
+  map_df(~{
+    
+    g <- readRDS(uni_files[.x]) %>%
+      remove_small_components()
+    #get the data on the uni's
+    uni_name <- basename(uni_files[.x]) %>% str_remove(., ".rds") %>% str_remove(., "[0-9]+")
+    data_id <- basename(uni_files[.x]) %>% str_remove(., ".rds") %>% str_remove(., "[ a-zA-Z]+") %>% 
+      str_remove(., " ")
+    
+    print(uni_name)
+    
+    assortativity_nominal(g, types = as.factor(vertex_attr(g, "year")))
+    
+    g_df <- as_data_frame(g, what = "vertices") %>% tibble
+    
+    dorms_df <- facebook_fraction(g, "dorm")
+    year_df <- facebook_fraction(g, "year")
+    student_type <- vertex_attr(g, "student_faculty")
+    
+    tibble(file_number = .x, 
+           file_name =  basename(uni_files[.x]) %>% str_remove(., ".rds"),
+           uni_name = uni_name,
+           data_id = data_id,
+           nodes = vcount(g), edges = ecount(g),
+           student_1 = sum(student_type==1)/vcount(g),
+           student_2 = sum(student_type==2)/vcount(g),
+           student_3 = sum(student_type==3)/vcount(g),
+           student_4 = sum(student_type==4)/vcount(g),
+           student_5 = sum(student_type==5)/vcount(g),
+           student_6 = sum(student_type==6)/vcount(g),
+           
+    )
+    
+  })
+```
+
+
+##Plot individual uni
+
+This chunk allow the plotting of individual uni's
+
+```{r}
+#penn test 
+penn_test <-  readRDS(file.path("/home/jonno/setse_1_data/facebook_embeddings/HPC_embeddings","Penn94.rds"))
+ penn_test$embeddings_data$network_dynamics %>%
+  bind_rows() %>%
+   # left_join(uni_stats, by = c("file_name")) %>%
+  ggplot(aes(x = Iter, y = log10(static_force))) + geom_point()
+
+ 
+ penn_test$node_detail %>%
+   filter((year %%1)==0#,
+   #       student_faculty %in% 1:2,
+#          year %in% 2004:2005
+) %>%
+  # filter(log(euc_tension)>-1) %>%
+ #  filter(year %in% c(2004, 2005, 2006)) %>%
+   ggplot(aes(x = log(euc_tension), y = elevation, color = factor(year))) + geom_point()+
+   labs(title = "SETSe embeddings Penn State",
+        color = "Year of enrollment")
+ +
+   facet_wrap(~factor(year))
+ 
+ranger_df %>%
+   ggplot(aes( x = (mean_tension2))) + geom_density()
+
+#  theme(legend.position="bottom")
+
+#means doesn't seem very useful here, probably becuase so much is going on
+ fb_metrics <- metric_set(accuracy, kap, bal_accuracy)
+ranger_df <- penn_test$node_detail %>% filter(gender !=0,
+                                         (year %% 1)==0,
+                                         year %in% c(2005,2005),
+                                         student_faculty %in% 1:2) %>%
+  mutate(
+        target = factor(student_faculty),
+         euc_tension2 = (euc_tension-mean(euc_tension))/sd(euc_tension),
+         mean_tension2 = (mean_tension-mean(mean_tension))/sd(mean_tension),
+         elevation2 = (elevation-mean(elevation))/sd(elevation)) 
+
+
+set.seed(54)
+sample_vect <-  sample(1:nrow(ranger_df), size = round(nrow(ranger_df)*0.8), replace = TRUE)
+train <- ranger_df %>% slice(sample_vect)
+test <- ranger_df %>% slice((1:nrow(ranger_df))[!(1:nrow(ranger_df) %in% sample_vect)])
+
+
+                
+ model <- ranger(target~ mean_tension+ elevation + euc_tension + year, 
+               data= train)
+
+ voters <- 11
+      mod <- class::knn.cv(train = train %>% select(mean_tension2, euc_tension2, elevation2), 
+                    cl = factor(train$target), 
+                   k = voters, prob = TRUE)
+  
+  #adjust for the fact that the node itself is included in the voting data
+
+   
+tibble(truth = test$target,
+              estimate = predict(model, data = test)$predictions) %>%
+  fb_metrics(truth = truth, estimate = estimate)
+
+tibble(truth = train$target,
+              estimate = mod) %>%
+  fb_metrics(truth = truth, estimate = estimate)
+
+
+ max(abs(penn_test$node_detail$static_force))
+
+ penn_test2 <-  penn_test$node_detail %>%
+    mutate(abs_static_force = abs(static_force),
+           abs_force = abs(force.x),
+           fract = abs_static_force/abs_force) 
+  
+  penn_test2 %>%
+    ggplot(aes(x = log10(fract))) + geom_density()
+ 
+  
+   table(abs(penn_test$node_detail$static_force)<0.001)/nrow(penn_test$node_detail)
+
+   
+   table(round(penn_test$node_detail$force.x, 2))
+   
+  table(penn_test2$fract<1)
+   
+  #total static force error 
+  sum(abs(penn_test$node_detail$static_force))/sum(abs(penn_test$node_detail$force.x))
+  
+  comparison_df <- bind_rows( 
+    readRDS(file.path("/home/jonno/setse_1_data/facebook_embeddings/HPC_embeddings","Caltech36.rds"))$node_detail,
+    readRDS(file.path("/home/jonno/setse_1_data/facebook_embeddings/HPC_embeddings","Simmons81.rds"))$node_detail)
+  
+   c("Dartmouth6", "Wellesley22", "Wesleyan43", "Haverford76")
+  c("Auburn71", "Pepperdine86", "Rice31", "Simmons81")
+  
+  c("Auburn71", "Mich67",  "Maine59", "BC17")
+  
+  
+target_unis <-   c("Auburn71", "Mich67",  "Maine59", "BC17")
+comparison_df<-    target_unis %>%
+    map_df(~{
+      readRDS(file.path("/home/jonno/setse_1_data/facebook_embeddings/HPC_embeddings",
+                           paste0(.x, ".rds")))$node_detail
+           })
+  
+dat_text <- node_details_df %>%
+  filter(file_name %in% target_unis) %>%
+  select(uni = file_name, year_assort, mean_tension, euc_tension, abs_elevation) %>%
+  mutate_at(., vars(-uni), signif, 2) %>%
+  mutate(text_message = paste0("assort=", year_assort, " abs elevation=", abs_elevation, " tension=", mean_tension ))
+
+
+
+#lower tension gives more compact shapes
+#lower elevation indicates many nodes with few connections outside ther group
+comparison_df %>%
+  filter((year %% 1)==0,
+         
+         #     uni =="Auburn71",
+         log(mean_tension)>-2.5
+  ) %>%
+  ggplot(aes(x = log(median_tension), y = elevation)) + 
+  geom_point(aes(colour = factor(year)), alpha = 0.4) +
+  facet_wrap(~uni) + 
+  geom_text(
+    data    = dat_text,
+    mapping = aes(x = -Inf, y = -Inf, label = text_message),
+    hjust   = -0.1,
+    vjust   = -1
+  ) +
+  labs(title = "Node level facebook embeddings of selected universities",
+       x = "log mean tension",
+       color = "Year")
+ggsave(file.path(FiguresFolder,  "node_level_embeddings_of_universities.pdf"))   
+  
+comparison_df %>%
+  filter((year %% 1)==0,
+         log(mean_tension)>-2.5
+  ) %>%
+  ggplot(aes(x = log(median_tension), y = elevation)) + 
+  geom_point(aes(colour = uni), alpha = 0.4) +
+  facet_wrap(~factor(year)) 
+
+#year centroid
+    comparison_df %>%
+    filter((year %% 1)==0) %>%
+        group_by(year,
+                 uni) %>%
+        summarise(mean_elevation = mean(elevation),
+                  mean_tension = mean(mean_tension)) %>%
+    ggplot(aes(x = log(mean_tension), y = mean_elevation, colour =uni)) + 
+    geom_point() +
+    facet_wrap(~ factor(year)) 
+  
+    comparison_df %>%
+    filter((year %% 1)==0,
+           log(mean_tension)>-2.5) %>%
+    ggplot(aes(x = (elevation), colour = factor(year))) + 
+    geom_density() +
+    facet_wrap(~uni)
+    
+    #The first year is never the highest tension
+    #the highest tension is always the lowest years. However the first year is usualy one of the highest years.
+    #The lowest tension years are those who are closest to the mean for the university.
+    #This is counter intuitive as these years experience tension from all other yeas.
+        comparison_df %>%
+     filter((year %% 1)==0,
+           log(mean_tension)>-2.5) %>%
+    ggplot(aes(x = log10(mean_tension), colour = factor(year))) + 
+    geom_density() +
+    facet_wrap(~uni)
+  
+        
+g %>%
+  set_vertex_attr(., "year", value = as.factor(vertex_attr(g, "year")) %>% as.integer) %>%
+  assortativity_nominal(., types = "year")
+        
+```
+
+##Classificiation
+
+This chunk compares nearest neighbout classificationusing setse against neighbour classification using the original graph
+
+
+The setse embeddings beats the network neighbour approach on average across all values of k, for all metrics.
+
+Accuracy is always better as SETSe will choose the majority class whilst network neighbours won't.
+Conversely this means that the network neighbours can have higher balanced accuracy.
+
+2004 performs worse than 2005 for both as the datasets are more skewed in 2004.
+In fact as facebook was so new in 2004 many people may not have signed up skewing the results somewhat.
+I will use the results only for 2005.
+
+for 2005 SETSe outperforms graph neighbour voting for all values of k, for balanced accuracy, accuracy and cohens kappa
+
+```{r}
+
+source(file = file.path(SubcodeFolder, "compare_setse_with_graph.R"))
+
+class_perf <- list.files(file.path(PLwd, "facebook_classifier"), full.names = TRUE) %>%
+  map_df(readRDS) %>%
+  mutate(diff = estimate-network_knn,
+         better = (diff>0)*1)
+
+test <-class_perf %>%
+#  filter(metric!= "accuracy") %>%
+  group_by(metric, active_period, k) %>%
+  summarise(better = mean(better, na.rm = T),
+            na_val = sum(is.na(better)),
+            student_1 = sum(student_1),
+            student_2 = sum(student_2))
+
+test %>%
+  filter(active_period==2005) %>%
+  ggplot(aes(x = k, y = better, colour = metric)) + geom_line() +
+  labs(title = "Predicting student type from year embeddings relative to graph neighbour voting",
+       x = "number of nearest neighbours in SETSe space k",
+       y ="Fraction of times SETSe beats graph neighbour voting")
+ggsave(file.path(FiguresFolder,  "facebook_knn_vs_graph_vote.pdf"))   
+
+
+test2 <- test%>%
+  filter(active_period==2005)
+
+class_perf %>%
+  filter(active_period==2005) %>%
+  mutate(diff = estimate-network_knn) %>%
+  #filter(metric!= "accuracy") %>%
+#  filter(metric== "bal_accuracy") %>%
+  ggplot(aes(x = factor(k), y = diff, fill = metric)) + geom_boxplot()+
+  facet_grid(metric~active_period)
+
+
+
+
+class_perf %>%
+  filter(file_name =="Yale4") %>%
+  filter(active_period==2005) %>%
+  mutate(diff = estimate-network_knn) %>%
+ggplot(aes(x = k, y = diff, colour = metric)) + geom_point()+
+  facet_wrap(~file_name)
+
+```
+
+##2 dimension projections
+
+I realised I can project a network using two variables to get a two dimensional representation
+
+for this I need to use edge normalisation to get the forces on the same scale. Or somesort of normalisation anyway
+
+This chuunk can be held in reserve. Really it opens up a lot more questions and may be better spun out into a new paper. It starts looking more at machine learning on SETSe embeddings as opposed to introducing the embeddings method itself.
+
+```{r}
+
+graph_to_load <- list.files(file.path(PLwd,"facebook100/facebook100_igraph"), pattern = "Simmons81",
+                            full.names = T)
+
+  g <- readRDS(graph_to_load )  %>% #load file
+    remove_small_components()  %>%
+    facebook_year_clean() %>% prepare_SETSe_continuous(., node_names = "name", k = 1000, force_var = "year", 
+                                                       sum_to_one = TRUE, 
+                                                       distance = 100) %>%
+    set_vertex_attr(., "force", value = vertex_attr(., "force")*1000)
+  
+  embeddings_data_year <- SETSe_bicomp(g, 
+                                  tstep = 0.01,
+                                  mass = sum(abs(vertex_attr(g, "force"))/2)/vcount(g),
+                                  tol = sum(abs(vertex_attr(g, "force")))/1000,
+                                  verbose = TRUE, 
+                                  sparse = TRUE, 
+                                  sample = 100,
+                                  static_limit = sum(abs(vertex_attr(g, "force")))) 
+  
+  
+  g2 <- readRDS(graph_to_load )  %>% #load file
+    remove_small_components()  %>%
+    facebook_year_clean() %>% prepare_SETSe_binary(., node_names = "name", 
+                                                   k = 1000, 
+                                                   force_var = "student_faculty", 
+                                                   positive_value =1,
+                                                   sum_to_one = TRUE, 
+                                                   distance = 100) %>%
+    set_vertex_attr(., "force", value = vertex_attr(., "force")*1000)
+  
+  embeddings_data_student <- SETSe_bicomp(g2, 
+                                       tstep = 0.01,
+                                       mass = sum(abs(vertex_attr(g, "force"))/2)/vcount(g),
+                                       tol = sum(abs(vertex_attr(g, "force")))/1000,
+                                       verbose = TRUE, 
+                                       sparse = TRUE, 
+                                       sample = 100,
+                                       static_limit = sum(abs(vertex_attr(g, "force")))) 
+  
+    
+  g3 <- readRDS(graph_to_load )  %>% #load file
+    remove_small_components()  %>%
+    facebook_year_clean() %>% prepare_SETSe_binary(., node_names = "name", 
+                                                   k = 1000, 
+                                                   force_var = "student_faculty", 
+                                                   positive_value =2,
+                                                   sum_to_one = TRUE, 
+                                                   distance = 100) %>%
+    set_vertex_attr(., "force", value = vertex_attr(., "force")*1000)
+  
+  embeddings_data_student2 <- SETSe_bicomp(g3, 
+                                       tstep = 0.01,
+                                       mass = sum(abs(vertex_attr(g, "force"))/2)/vcount(g),
+                                       tol = sum(abs(vertex_attr(g, "force")))/1000,
+                                       verbose = TRUE, 
+                                       sparse = TRUE, 
+                                       sample = 100,
+                                       static_limit = sum(abs(vertex_attr(g, "force")))) 
+  
+  
+ test <-  left_join(embeddings_data_year$node_embeddings %>%
+                      set_names(paste0("year_", names(.))) %>%
+                      rename(node = year_node), 
+                    embeddings_data_student$node_embeddings %>%
+                      set_names(paste0("student_", names(.))) %>%
+                      rename(node = student_node), by = "node") %>%
+   left_join(embeddings_data_student$node_embeddings %>%
+                      set_names(paste0("student1_", names(.))) %>%
+                      rename(node = student1_node),by = "node") %>%
+   left_join( as_data_frame(g, what = "vertices"), by = c("node" = "name"))
+ 
+ 
+
+
+ test %>%
+   mutate(year = case_when(
+     (year %% 1)==0 ~year
+   )) %>%
+   filter(!is.na(year)) %>%
+  
+   
+    ggplot(aes(x = year_elevation, y = student_elevation, colour = factor(year))) + geom_point(alpha = 0.5) +
+   labs(title = "two dimensional plotting of network elevation",
+        x = "graduation year embedding",
+        y = "Student is type 1 embedding",
+        colour = "value")
+ 
+ 
+  test2 <-  left_join(embeddings_data_year$edge_embeddings %>%
+                      set_names(paste0("year_", names(.))) %>%
+                      rename(edge_name = year_edge_name), 
+                    embeddings_data_student$edge_embeddings %>%
+                      set_names(paste0("student_", names(.))) %>%
+                      rename(edge_name = student_edge_name), by = "edge_name") 
+  
+  
+  test2 %>%
+   # mutate(year = case_when(
+   #   (year %% 1)==0 ~year
+   # )) %>%
+   ggplot(aes(x = log(year_tension), y = log(student_tension))) + geom_point() +
+   labs(title = "two dimensional plotting of network elevation",
+        x = "graduation year embedding",
+        y = "Student is type 1 embedding")
+
+  
+mod <-  glm(as.factor(year) ~year_elevation + student_elevation ,family=binomial(link='logit'), test) 
+    summary(mod)
+
+
+tibble(estimate = factor(predict(mod, type = "response")>0.5), truth = factor(test$student_faculty!=1)) %>%
+  metrics(estimate = estimate, truth = truth)
+
+##
+##
+## See if a model can be made with missing data 90% train 10% test
+##
+##
+
+
+graph_to_load <- list.files(file.path(PLwd,"facebook100/facebook100_igraph"), pattern = "Simmons81",
+                            full.names = T)
+
+  g <- readRDS(graph_to_load )  %>% #load file
+    remove_small_components()  %>%
+    facebook_year_clean() 
+
+
+test_df <- as_data_frame(g, what = "vertices")
+set.seed(456)
+embedding_fold <- vfold_cv(test_df, v = 10, strata = student_faculty)
+
+#
+# This goes in a loop
+#
+
+
+kfold_test_list <- 1:10 %>% map(~{
+  
+  #this is actually the vertices which should keep thier force atributes.
+  #all others go to 0 and do not affect the analysis
+  train_embeds_df <-test_df %>%
+    mutate(student2 = ifelse(1:n() %in% embedding_fold$splits[[.x]]$in_id, student_faculty, -99),
+           year2 = ifelse((1:n() %in% embedding_fold$splits[[.x]]$in_id) & (year%%1)==0, year, NA ),
+           year2 = ifelse(is.na(year2), mean(year2, na.rm = TRUE), year2)
+    )
+
+  year_embeddings <- graph_from_data_frame(as_data_frame(g), directed = FALSE, vertices = train_embeds_df) %>% prepare_SETSe_continuous(., node_names = "name", k = 1000, force_var = "year2", 
+                                                                                                                                        sum_to_one = TRUE, 
+                                                                                                                                        distance = 100) %>%
+    set_vertex_attr(., "force", value = vertex_attr(., "force")*1000) %>%
+    SETSe_bicomp(., 
+                 tstep = 0.01,
+                 mass = sum(abs(vertex_attr(., "force"))/2)/vcount(.),
+                 tol = sum(abs(vertex_attr(., "force")))/1000,
+                 verbose = TRUE, 
+                 sparse = TRUE, 
+                 sample = 100,
+                 static_limit = sum(abs(vertex_attr(., "force")))) 
+  
+  
+  student_embeddings <- graph_from_data_frame(as_data_frame(g), directed = FALSE, vertices = train_embeds_df) %>%
+    prepare_SETSe_binary(., 
+                         node_names = "name", 
+                         k = 1000, force_var = "student2",
+                         positive_value = 1, 
+                         sum_to_one = TRUE,
+                         distance = 100) %>%
+    set_vertex_attr(., "force", value = vertex_attr(., "force")*1000)  %>%
+    SETSe_bicomp(., 
+                 tstep = 0.01,
+                 mass = sum(abs(vertex_attr(., "force"))/2)/vcount(.),
+                 tol = sum(abs(vertex_attr(., "force")))/1000,
+                 verbose = TRUE, 
+                 sparse = TRUE, 
+                 sample = 100,
+                 static_limit = sum(abs(vertex_attr(., "force")))) 
+  
+  #
+  #
+  #
+  
+  fold_df <- embedding_fold$splits$`1`$data[embedding_fold$splits$`1`$in_id,]
+  embedded_combo <-  left_join(year_embeddings$node_embeddings %>%
+                                 set_names(paste0("year_", names(.))) %>%
+                                 rename(node = year_node), 
+                               student_embeddings$node_embeddings %>%
+                                 set_names(paste0("student_", names(.))) %>%
+                                 rename(node = student_node), by = "node")
+  
+  train_df  <- embedded_combo  %>%
+    left_join(., train_embeds_df, by = c("node" = "name")) %>%
+    filter((1:n() %in% embedding_fold$splits[[.x]]$in_id))
+  
+  
+  test_df  <- embedded_combo  %>%
+    left_join(., train_embeds_df, by = c("node" = "name")) %>%
+    filter(!(1:n() %in% embedding_fold$splits[[.x]]$in_id))
+  
+  mod <-  glm(as.factor(student2) ~year_elevation + student_elevation ,family=binomial(link='logit'), train_df) 
+  #  summary(mod)
+  
+  student_perf <- tibble(estimate = factor((predict(mod,  newdata = test_df)>0.5)*1), 
+                         truth = factor((test_df$student2==1)*1)) %>%
+    fb_metrics(estimate = estimate, truth = truth) %>%
+    mutate(fold = .x)
+  
+  
+  modyear <-  ranger(factor(year2, levels = 2004:2009) ~year_elevation + student_elevation, train_df %>%
+                       filter((year2 %% 1)==0)) 
+  # summary(mod)
+  
+  year_perf <- tibble(estimate = predict(modyear, type = "response", data = test_df %>%
+                                           filter((year2 %% 1)==0) )$predictions, 
+                      truth = test_df %>%
+                        filter((year2 %% 1)==0) %>% pull(year2) %>% factor(., levels = 2004:2009) ) %>%
+    fb_metrics(estimate = estimate, truth = truth) %>%
+    mutate(fold = .x)
+  
+  Out <- list(student_embeddings = student_embeddings, year_embeddings = year_embeddings,
+              student_perf = student_perf, year_perf = year_perf)
+  
+  
+  return(Out)
+}
+)
+
+
+test <- kfold_test_list %>% transpose()
+
+names(test)
+
+test2 <- kfold_test_list %>%
+  transpose() %>% {.[[3]]} %>%
+  bind_rows()
+
+test3 %>%
+  ggplot(aes(x = .estimate)) +
+  geom_density()+
+  facet_wrap(.~.metric)
+
+test3 <- kfold_test_list %>%
+  transpose() %>% {.[[4]]} %>%
+  bind_rows()
+
+#Output should be a list of the following
+
+#A dataframe of elevation embeddings with 4 columns node, year, student, fold.
+#A dataframe of the folds tibble
+
+#The actual cross validation can be done outside the embedding loop in the normal way
+    
+```
+
+
+##facebook biconnecected test
 
 ```{r}
 #find which nodes have the most static force
@@ -680,7 +1087,7 @@ embeddings_data <- auto_SETSe(g2,
 stop_time <- Sys.time()
 
 start_time2 <- Sys.time()
-embeddings_data <- SETSe_bicomp2(g, 
+embeddings_data <- SETSe_bicomp(g, 
                               tstep = 0.01,
                               mass = sum(abs(vertex_attr(g, "force"))/2)/vcount(g),
                               tol = sum(abs(vertex_attr(g, "force")))/1000,
@@ -702,84 +1109,134 @@ embeddings_data$node_embeddings %>%
       
 ```
 
+#MNIST
 
-#check v2 of prep
-
-There is a bug it needs to be understood and fixed
+This has a quick look at MNIST and sees what happens when you try and embed it using SETSe
 
 ```{r}
 
-  #load common network
-    g <- readRDS(uni_files[grep("Caltech", uni_files )])  %>% #load file
-      remove_small_components()  %>%
-            facebook_year_clean()%>%  
-      prepare_SETSe_continuous(., k = 1000, 
-                               force_var = "year", 
-                               sum_to_one = FALSE, 
-                               distance = 1)
+MNIST_df <- read_csv(file.path(PLwd, "MNIST", "mnist_train.csv"), col_names = FALSE)
 
-#so simple so nice
-    embeddings_data2 <- g  %>%
-      auto_SETSe2(., tstep = 0.1, verbose = TRUE, sparse = T, sample = 100)
- 
- #The old school method.. a pain in the adze
- embeddings_data <- g %>%
-   set.edge.attribute(., "power_flow", value = 1) %>%
-    set.edge.attribute(., "capacity", value = 1) %>%
-   auto_SETSe(., tstep = 0.1, verbose = TRUE, sparse = T, sample = 100)
+1:6e4 %>% walk(~{
+  
+      #select single mnist
+    mnist_nodes <- MNIST_df %>% slice(.x) %>%
+      pivot_longer(cols = -X1) %>%
+      mutate(
+        index_val = 1:n(),
+        rows = rep(1:28, times = 784/28 ),
+        cols = rep(28:1, each = 784/28 ))
+  
+  file_path <- file.path(PLwd, "MNIST", "MNIST_embeddings",
+                         paste0("number_", min(mnist_nodes$X1), "_id_", .x, ".rds"))
+  
+  if(file.exists(file_path)){print(paste("MNIST", .x, "completed, proceeding to next"))
+    } else{
+    
 
-test <- bind_rows( embeddings_data2$node_embeddings %>% mutate(type = "new"),
-  embeddings_data$node_embeddings %>% mutate(type = "old"))
-
-
-  node_detail <- embeddings_data2$edge_embeddings %>% tibble() %>%
+    
+    
+    #convert into a graph values totalling to 2000
+    g_lattice <- make_lattice(c(28,28)) %>%
+      set_vertex_attr(., "names", value = 1:784) %>%
+      set_vertex_attr(., "value", value = mnist_nodes %>% pull(value)) %>%
+      prepare_SETSe_continuous(., node_names = "names", 
+                               k = 1000,
+                               force_var = "value",
+                               distance = 100,
+                               sum_to_one = TRUE) %>%
+      set_vertex_attr(., "force", value = vertex_attr(., "force")*1000)
+    
+    out <- auto_SETSe(g_lattice, force = "force", verbose = T,
+                      mass = 2000/784,
+                      tol = sum(abs(vertex_attr(g_lattice, "force")))/1000,
+                      sparse = TRUE)
+    
+    out$node_details <- out$edge_embeddings %>% tibble() %>%
       separate(., col = edge_name, into = c("from","to"), sep = "-") %>%
       select(from, to, tension) %>%
       pivot_longer(cols = c(from, to), names_to = "node_type", values_to = "node") %>%
       select(tension, node) %>%
       group_by(node) %>%
       summarise(sum_tension = sum(tension),
-                mean_tension = mean(tension)) %>%
-      left_join(embeddings_data$node_embeddings %>% tibble(), by = "node") %>%
-      left_join(as_data_frame(g, what = "vertices"), by = c("node"="name")) %>%
-    mutate(is_round = (year%%1)==0,
-           year = ifelse(is_round, year, NA))
+                mean_tension = mean(tension),
+                median_tension = median(tension),
+                euc_tension = sqrt(sum(tension^2))) %>%
+      left_join(out$node_embeddings %>% tibble(), by = "node") %>%
+      left_join(as_data_frame(g_lattice, what = "vertices"), by = c("node"="name"))
+    
+    saveRDS(out, file_path)
+    print(paste("MNIST", .x, "completed, proceeding to next"))
+  }
   
-  node_detail %>%
-    filter(!is.na(year)) %>%
-    ggplot(aes(x = mean_tension, y = elevation, colour = factor(year))) + geom_point()
-  
-  
-  
-  prep2 <-g %>%
-    SETSe_data_prep2(., force = "force", distance = "distance", mass = 1, edge_name = "edge_name", k = "k", sparse = TRUE)
+})
 
-  prep <-  g %>%
-   set.edge.attribute(., "power_flow", value = 1) %>%
-    set.edge.attribute(., "capacity", value = 1) %>%
-    SETSe_data_prep(., force = "force", distance = "distance", flow = "power_flow", mass = 1, edge_name = "edge_name", k = "k", sparse = T)
-  
-  
-#identical  #kvect and #dvect can't be checked with this graph as the edges are all identical
-  all.equal(prep$node_embeddings,
-  prep2$node_embeddings)
-  
-  prep$node_embeddings$node[1:10]
-  prep$ten_mat[1:10, 1:10] %>% row.names()
-  prep2$ten_mat[1:10, 1:10] %>% row.names()
- vertex_attr(g, "name")
+test <- list.files(file.path(PLwd, "MNIST", "MNIST_embeddings"), full.names = T) %>%
+  map_df(~{
+    
+    file_path <- .x
+    
+    details <- basename(file_path) %>% str_remove(., ".rds") %>% str_split(., "_", simplify = T)
+    
+    readRDS(.x)$node_details %>%
+      summarise(mean_tension = mean(mean_tension),
+                median_tension = mean(median_tension),
+                euc_tension = mean(euc_tension),
+                mean_elevation = mean(abs(elevation))) %>%
+      mutate(number = details[2],
+             id = details[4])
+    
+  })
 
- as_adjacency_matrix(g, sparse = T) %>% {.[1:10, 1:10]} %>% row.names()
- 
-  as_data_frame(g, what = "vertices")$name[1:10]
 
-  sparseA <- prep$ten_mat
-  sparseB <- prep2$ten_mat
-  class(sparseB)
-all.equal(sparseA, sparseB)  
+test %>%
+  ggplot(aes(x = euc_tension, y = mean_elevation, colour = factor(number))) + geom_point() +
+  scale_color_brewer(palette ="Paired")
 
-sparseA %>% rownames() %>% head
-sparseB %>% rownames() %>% head
+test <- as_data_frame(g_lattice, what = "vertices")
+
+#The mnist edge list is calulcated by adding 1 to the index and the row, subtracting 1 from the index and the row, adding 28 to the index and 1 to the columns subtracting 28 from the index and the column. this will produce a large number of invalid cells. These cells can be removed by doing the following
+#if the new row or columns doesn't exists remove it.
+
+edge_list_base <- mnist_nodes %>%
+  select(index_val:cols)
+
+link_above <- edge_list_base %>%
+  mutate(index_val = index_val-1,
+         rows = rows-1)
+
+link_below <- edge_list_base %>%
+  mutate(index_val = index_val+1,
+         rows = rows+1)
+
+link_right <- edge_list_base %>%
+  mutate(index_val = index_val+28,
+         cols = cols+1)
+
+link_left <- edge_list_base %>%
+  mutate(index_val = index_val-28,
+         cols = cols-1)
+
+
+test <-bind_rows(link_above, link_below, link_left, link_right) %>%
+  filter(index_val %in% 1:784,
+         rows %in% 1:28,
+         cols %in% 1:28)
+
+
+#edges in lattice 
+27^2*4 + 26*4*2
+
+mnist_example %>%
+pull(value) %>%
+  matrix(data =., nrow = 28, byrow = T) %>%
+  graph_from_adjacency_matrix(., mode = "undirected", weighted = TRUE)
+
+
+mnist_example %>%
+  ggplot(aes(y = cols, x = rows, fill = value)) +geom_raster()
+
+
 ```
 
 
@@ -787,156 +1244,19 @@ sparseB %>% rownames() %>% head
 
 This chunk shows that individual nodes naturally cluster by elevation with thier own sub groups sometimes the tension is also needed. I am not sure how to extract this without using a model though
 ```{r}
+#There is possibly a problem with the node position code. The part that created detected_communities is producing 40k lines intead of 20k, this may or may not be a problem...
 
-target_graphs <- tibble(file_path = list.files(file.path(PLwd, "peel_strain_files"))) %>%
-  separate(
-    col = file_path,
-    into = c("drop1", "drop2", "graph_ref", "drop3", "k"),
-    remove = FALSE,
-    convert = TRUE,
-    sep = "_"
-  ) %>%
-  mutate(k = k  %>% str_remove(., ".rds") %>%  as.integer) %>%
-  select(-contains("drop")) %>%
-  arrange(graph_ref)
+#....The 40k lines are becuase both groups a and be are checked.
 
-target_graphs <- target_graphs %>%
-filter(
-  #graph_ref %in% c((1:35)*100),
-  k ==0
-  )
-
-1:nrow(target_graphs)
-#seq(from = 100, to = 500, by = 100) 
-test <- 1:nrow(target_graphs)  %>% map(~{
-
-  graph_id_choice <- .x
-k_choice <- 0
-
-file_path <-  target_graphs %>%
-  filter(graph_ref ==graph_id_choice,
-         k ==k_choice ) %>% pull(file_path) %>%
-  file.path(PLwd,  "peel_strain_files",.  )
-embeddings_data <- readRDS(file_path)
-
-g_df<-as_data_frame(multi_quintet[[graph_id_choice]], what = "both")
-
-edge_data <- embeddings_data$edge_embeddings  %>%
-  separate(., col= edge_name, into = c("from", "to"),sep = "_", remove = FALSE ) %>%
-  left_join(g_df$vertices %>% rename_all(., ~paste0("from_", .)), by = c("from" = "from_node")) %>%
-  left_join(g_df$vertices %>% rename_all(., ~paste0("to_", .)), by = c("to" = "to_node")) %>%
-  mutate(graph_class = case_when(.x<101~ "A",
-          .x <201 ~"B",
-          .x <301 ~"C",
-          .x <401 ~"D",
-          TRUE~"E"),
-         graph_id = .x,
-         combo = paste(from_sub_class, to_sub_class))
-node_data <- embeddings_data$node_embeddings %>%
-  left_join(g_df$vertices, by = "node") %>%
-  mutate(graph_class =case_when(.x<101~ "A",
-          .x <201 ~"B",
-          .x <301 ~"C",
-          .x <401 ~"D",
-          TRUE~"E"),
-         graph_id = .x)
-
-out_data <- list(edge_data = edge_data, node_data = node_data)
-
-return(out_data)
-
-}) %>% transpose(.) %>%
-  map(~{
-    reduce(., bind_rows)
-    
-  })
-
-
-
-#create a data frame that uses edge summary data for each node and 
-node_data2 <- bind_rows(
-  test$edge_data %>%
-    select(node = from, strain, tension, graph_class, graph_id),
-  test$edge_data %>%
-    select(node = to, strain, tension, graph_class, graph_id)
-) %>%
-  group_by(node, graph_class, graph_id) %>%
-  summarise_all(., .funs = list(mean = mean, median = median)) %>%
-  left_join(test$node_data %>% select(node, elevation, class, sub_class, graph_class, graph_id))
-
-
-node_data2 %>%
-  filter(graph_id %in% seq(100, 500, by = 100)) %>%
-  ggplot(aes(x = tension_mean, y = elevation, colour = sub_class)) + geom_point() +
-  facet_wrap(~graph_class, scales = "free_y") +
-  labs(title = "The position of individual node in each graph type")
-
-
-comm_df <-test$edge_data %>%
-  filter(graph_class =="D")
-
-test2 <- multi_quintet[[400]] %>% 
-  set_edge_attr(., "weight", value = 1/comm_df$tension)
-
-  test3 <-tibble(
-  node = node_data2 %>% filter(graph_class =="D") %>% pull(node),
-  tension = cluster_fast_greedy(test2) %>% membership(),
-       nothing =  cluster_fast_greedy(test2, weights = NULL) %>% membership())
-
-groups <- expand_grid(graph_id =  1:500,
-              class = c("A", "B"))
-  
- test <- 1:nrow(groups) %>%
-    map_df(~{
-      
-      temp_df <-node_data2 %>%
-        filter(graph_id ==groups$graph_id[.x],
-               class == groups$class[.x])  %>%
-        ungroup
-               
-      delete_class <- ifelse(groups$class[.x]=="A","B", "A") #The node class that should be deletex
+source(file = file.path(SubcodeFolder, "node_position.R"))
  
-      temp_g <- multi_quintet[[groups$graph_id[.x]]] 
-      temp_g <- temp_g %>% delete_vertices(., v = which( vertex_attr(temp_g, "class") == delete_class) )
-      
-       temp_cluster <-  temp_df%>%
-        select(elevation) %>%
-        kmeans(., 2) 
-      temp_df %>%
-        mutate(clustering_kmeans = temp_cluster$cluster,
-                clustering_fast_greedy = cluster_fast_greedy(
-          temp_g,
-          merges = T
-        ) %>% as.hclust %>%
-          cutree(., k = 2),
-            clustering_walktrap = cluster_walktrap(
-          temp_g,
-          merges = T
-        ) %>% as.hclust %>%
-          cutree(., k = 2)#,
-       # clustering_louvain = cluster_louvain( temp_g) %>% membership()
-               )
-    }) %>%
-   mutate_at( vars(contains("clustering")), ~ifelse(class =="A", ., .+2)) %>%
-   group_by(graph_class) %>%
-   mutate(tension_mean = (tension_mean-min(tension_mean))/(max(tension_mean)-min(tension_mean)),
-          elevation =  (elevation-min(elevation))/(max(elevation)-min(elevation))) %>%
-   ungroup
-  
- test %>%
-    filter(graph_id %in% seq(100, 500, by = 100)) %>%
-  ggplot(aes(x = tension_mean, y = elevation, colour = factor(clustering_kmeans))) + geom_point() +
-  facet_wrap(~graph_class, scales = "free_y") +
-   labs(title = "the position of each node in a graph coloured by kmeans groups",
-        colour = "kmeans cluster")
- 
- 
-combos_df <- expand_grid(names = test %>% select(contains("clustering")) %>% names, graph_id = unique(test$graph_id))
+#Use ARI to compare the quality of all clustering techniques
+combos_df <- expand_grid(names = detected_communities %>% select(contains("clustering")) %>% names, graph_id = unique(detected_communities$graph_id))
  
         test_ARI <-1:nrow(combos_df) %>%
           map_df(~{
             print(.x)
-            temp <-test %>%
+            temp <-detected_communities %>%
               filter(graph_id == combos_df$graph_id[.x])
             
             tibble(
@@ -947,15 +1267,54 @@ combos_df <- expand_grid(names = test %>% select(contains("clustering")) %>% nam
             
           })
         
-        
+        #plot the results
         #The ability to cluster graphs that have communities or groups that are not defined by their linking to each other greatly outstrips everything else
+ 
+         #plot and example of the true communities
+detected_communities %>%
+  filter(graph_id %in% seq(100, 500, by = 100)) %>%
+  ggplot(aes(x = tension_mean_range, y = elevation_range, colour = sub_class)) + geom_point() +
+  facet_wrap(~graph_class) +
+  labs(title = "The position of individual node in each graph type")
+  ggsave(file.path(FiguresFolder,  "peels_quintet_groups_in_setse_space.pdf"))   
+ 
+
+ #plot showing how SETSe does the comparisons
+ detected_communities %>%
+    filter(graph_id %in% seq(100, 500, by = 100)) %>%
+  ggplot(aes(x = tension_mean, y = elevation, colour = factor(clustering_kmeans))) + geom_point() +
+  facet_wrap(~graph_class, scales = "free_y") +
+   labs(title = "the position of each node in a graph coloured by kmeans groups",
+        colour = "kmeans cluster")
+
+              
+        #when using knowlegde of the groups
         test_ARI %>%
-          mutate(clustering = name %>% str_remove(., "clustering_") %>% str_replace(., "_", " ")) %>%
+          filter(!grepl("full", name)) %>%
+          mutate(clustering = name %>% str_remove(., "clustering_") %>% str_replace(., "_", " "),
+                 clustering = ifelse(clustering =="kmeans", "SETSe kmeans", clustering)) %>%
+          ggplot(aes(x = clustering, y = ARI, fill = clustering)) + geom_boxplot() +
+          facet_wrap(~graph_class) +
+          labs(title = "Adjusted rand index for different clustering methods, for each graph type",
+               x = "Clustering method") + 
+          theme(
+            axis.text.x=element_blank(),
+            axis.ticks.x=element_blank())
+    ggsave(file.path(FiguresFolder,  "peels_clustering_ari.pdf"))        
+        
+         #when not using knowledge of the groups
+         test_ARI %>%
+          filter(grepl("full", name))  %>%
+          mutate(clustering = name %>% str_remove(., "clustering_") %>% str_replace(., "_", " "),
+                 clustering = ifelse(clustering =="kmeans", "SETSe kmeans", clustering)) %>%
           ggplot(aes(x = clustering, y = ARI, fill = clustering)) + geom_boxplot() +
           facet_wrap(~graph_class) +
           labs(title = "Adjusted rand index for different clustering methods, for each graph type")
 
-  
+         #
+ test <- test_ARI %>%
+    group_by(name, graph_class) %>%
+    summarise(mean = mean(ARI))
 ```
 
 #one vs all 
@@ -1511,4 +1870,3 @@ test_node <- dominance_list$node
 
 test_edge <- dominance_list$edge
 ```
-

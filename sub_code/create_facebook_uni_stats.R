@@ -1,4 +1,11 @@
 
+#create the facebook uni stats if they haven't already been created
+
+if(file.exists(file.path(PLwd, "facebook_uni_stats.rds"))){
+  
+  uni_stats <- readRDS(file.path(PLwd, "facebook_uni_stats.rds"))
+  
+} else {
 uni_stats <-1:length(uni_files) %>%
   map_df(~{
     
@@ -24,6 +31,10 @@ uni_stats <-1:length(uni_files) %>%
            max_comp_perc = max_component/nodes,
            total_components = components_info$no,
            dorms = length(unique(g_df$dorm)),
+            year_assort = assortativity_nominal(g, types = as.factor(vertex_attr(g, "year")), directed = F),
+            gen_assort = assortativity_nominal(g, types = as.factor(vertex_attr(g, "gender")), directed = F),
+            student_assort = assortativity_nominal(g, types = as.factor(vertex_attr(g, "student_faculty")), directed = F),
+           dorm_assort = assortativity_nominal(g, types = as.factor(vertex_attr(g, "dorm")), directed = F),
            big_dorms = dorms_df %>% filter(classes != "Other") %>% nrow,
            big_dorm_fraction = dorms_df %>% filter(classes =="Other") %>% pull(percentage) %>%{1- sum(.)},
            mid_dorms = dorms_df %>% filter(classes2 != "Other") %>% nrow,
@@ -36,3 +47,7 @@ uni_stats <-1:length(uni_files) %>%
     
   }) %>%
   mutate(data_id = as.integer(data_id))
+
+  saveRDS(uni_stats, file.path(PLwd, "facebook_uni_stats.rds"))
+
+}

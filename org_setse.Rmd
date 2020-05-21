@@ -1,0 +1,493 @@
+---
+title: "Untitled"
+author: "Jonathan Bourne"
+date: "20/05/2020"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+
+
+
+#some core periphery stuff
+Core-periphery structure requires something else in the network 
+https://arxiv.org/pdf/1710.07076.pdf
+
+This one could be implemented in R
+A Fast Algorithm for the DiscreteCore/Periphery Bipartitioning Problem
+https://arxiv.org/pdf/1102.5511.pdf
+
+```{r}
+
+packages <- c("tidyverse", "igraph","readr","readxl", "broom", "stringr", "xtable", "rlang", "latex2exp", "yardstick", "minpack.lm", "ggraph", "patchwork", "rsample", "VGAM", "class", "mclust", "R.matlab", "ranger")
+
+new.packages <- packages[!(packages %in% installed.packages()[,"Package"])]
+if(length(new.packages)) install.packages(new.packages)
+
+select <- dplyr::select
+arrange <- dplyr::arrange
+map <- purrr::map
+sapply(packages, library, character.only = TRUE)
+
+library(NetworkSpringEmbedding)
+
+#Set up file system to read the correct folders this switches between aws and windows mode
+
+#basewd <- "/home/jonno/Dropbox/Jonathan_Bourne_Phd_Folder"
+LatexFolder <- "/home/jonno/Dropbox/Apps/ShareLaTeX/Sets Paper 1" 
+FiguresFolder <- file.path(LatexFolder, "Figures")
+TablesFolder <- file.path(LatexFolder, "Tables")
+MatricesFolder <- file.path(LatexFolder, "Matrices")
+PLwd <- "/home/jonno/setse_1_data"
+CodeFolder <- "/home/jonno/SETSe_assortativity_and_clusters"
+SubcodeFolder <- file.path(CodeFolder, "sub_code")
+
+#Load some other useful functions
+list.files("/home/jonno/Useful_PhD__R_Functions", pattern = ".R", full.names = T) %>%
+  walk(~source(.x))
+
+
+ReedFolder <- file.path(PLwd, "Reed_Nelson")
+
+```
+
+
+#Reed Nelson
+
+This chunk does and exploration of the data that Reed Nelson gave me
+
+The profit making metera has notably higher edge density
+
+
+```{r}
+brazil_files <-list.files(file.path(ReedFolder, "north_american_brazil"), full.names = T)
+
+
+lamp_g <- graph_from_data_frame(read_csv(brazil_files[2]), directed = F, vertices = read_csv(brazil_files[1])) %>%
+  remove_small_components()
+
+lamp_list <- lamp_g %>% as_data_frame(., what = "both")
+
+lamp_edge <-lamp_list$edges %>%
+  mutate(weight = case_when(
+    weight =="A"~15,
+    weight =="B"~25,
+    weight == "C"~35,
+    TRUE ~as.numeric(weight)
+  ))
+
+lamp_g <- graph_from_data_frame(lamp_edge, directed = FALSE, vertices = lamp_list$vertices)
+
+
+test <- as_data_frame(lamp_g)
+
+ecount(lamp_g)/vcount(lamp_g)
+
+plot(lamp_g)
+
+lapdog_g <- graph_from_data_frame(read_csv(brazil_files[4]), directed = T, vertices = read_csv(brazil_files[3])) %>%
+  remove_small_components()
+
+lapdog_list <- lapdog_g %>% as_data_frame(., what = "both")
+
+lapdog_edge <-lapdog_list$edges %>%
+  mutate(weight = case_when(
+    weight =="A"~15,
+    weight =="B"~25,
+    weight == "C"~35,
+    TRUE ~as.numeric(weight)
+  ))
+
+lapdog_g <- graph_from_data_frame(lapdog_edge, directed = FALSE, vertices = lapdog_list$vertices)
+
+ecount(lapdog_g)/vcount(lapdog_g)
+
+plot(lapdog_g)
+
+metera_g <- graph_from_data_frame(read_csv(brazil_files[6]), directed = T, vertices = read_csv(brazil_files[5])) %>%
+  remove_small_components()
+
+plot(metera_g)
+
+ecount(metera_g)/vcount(metera_g)
+
+lamp_g %>%
+  ggraph() +
+    geom_edge_link() +
+  geom_node_point(aes( colour = class), size = 7) +
+geom_node_text(aes(label = name))+
+  ggtitle("lamp")
+  NULL
+
+
+lamp_embeddings <- lamp_g %>%
+  prepare_SETSe_binary(., node_names = "name", k = 1000, force_var = "class", positive_value = "Finance & HR") %>%
+  auto_SETSe() %>%
+  map(~{.x %>% mutate(graph_id = "lamp")})
+
+lapdog_embeddings <- lapdog_g %>%
+  prepare_SETSe_binary(., node_names = "name", k = 1000, force_var = "class", positive_value = "Finance & HR") %>%
+  auto_SETSe() %>%
+  map(~{.x %>% mutate(graph_id = "lapdog")})
+
+g <- metera_g  %>%
+  set_edge_attr(., "k", value = edge_attr(., "weight")*100)
+
+test <- c("lamp_g", "lapdog_g", "metera_g") %>%
+  map(~{
+    
+  graph_name <- .x
+  temp <- get(.x)  %>%
+    set_vertex_attr(., "node_name", value = vertex_attr(., "name")) %>%
+  set_edge_attr(., "k", value = edge_attr(., "weight")*100) %>%
+  categorical_SETSe(., "node_name", node_names = "name", k = "k") %>%
+    map(~{ .x %>% 
+        mutate(graph_id = graph_name)
+      })
+
+  }) %>%
+  transpose() %>%
+  map(~{bind_rows(.x)})
+  
+
+
+test$node_details %>%
+  ggplot(aes(x = mean_strain, y = mean_elevation, colour = class)) +
+  geom_point()+
+  facet_wrap(~graph_id)
+
+test$node_details %>%
+group_by(graph_id) %>%
+  summarise_if(is.numeric, ~median((.)))
+
+test2 <- test$node_details %>%
+  select(-class_2,-node) %>%
+  group_by(graph_id, class) %>%
+  summarise_all(list(mean))
+
+#although lamp and metera have similar tension, lapdog has easily the highest tension of the three networks
+#The overall mean absolute elevation of metera is much lower than the other two. This is becuase 
+
+node_details_df <- test$edge_embeddings %>%
+  separate(., col = edge_name, into = c("from", "to")) %>%
+  pivot_longer(cols = from:to, , values_to = "node") %>%
+  select(-name) %>%
+  group_by(node) %>%
+  summarise_all(mean) %>%
+  left_join(., test$node_embeddings) %>%
+  left_join(as_data_frame(g, what = "vertices"), by = c("node" ="name")) %>%
+  arrange(as.numeric(node))
+
+test2 %>%
+ggplot(aes(x = (euc_strain), y = euc_elevation, color = class)) + geom_point()
+
+
+tsne_out <-Rtsne(test$dist_node %>% select(-node), perplexity = 5)
+
+bind_cols(test2,
+tibble(tsne_x = tsne_out$Y[,1],
+       tsne_y = tsne_out$Y[,2])
+) %>%
+  ggplot(aes(x = tsne_x, y = tsne_y, color = class)) +  geom_point()
+
+```
+
+##accounting firms
+
+This is data from the accounting firms Reed sent me
+```{r}
+accounting_files <-list.files(file.path(PLwd, "/Reed_Nelson/accounting_firms"), full.names = T)
+
+create_accountancy <- function(n, symmetric = FALSE){
+  
+  directed <- TRUE
+  
+  temp <- read_csv(accounting_files[n+1], col_names = F) %>% 
+    mutate(from = paste0("X",1:nrow(.)))%>%
+    pivot_longer(cols = -from, names_to = "to", values_to = "value") %>%
+    filter(value !=0) 
+  
+  #makes the data frame symmetric, where the matrix is transposed and added
+  if(symmetric){
+    
+    directed <- FALSE
+    
+    temp2 <- temp %>%
+      rename(from = to, to = from)
+    
+    temp <- bind_rows(temp, temp2) %>%
+      group_by(from, to)  %>%
+      summarise(weight = sum(value))
+    
+  }
+  
+  g <- temp %>%
+    graph_from_data_frame(., directed = directed, 
+                          vertices = read_csv(accounting_files[n], col_names = T) %>%
+                            separate(., col = data, into = c("comp_id", "person_name"), sep = "-")  %>% 
+                            mutate(name = paste0("X",1:nrow(.)), node_id = paste0("X",1:nrow(.))) %>%
+                            select(name, everything())
+    )
+
+  if(symmetric){
+    
+    g <- g %>%
+      simplify()
+    
+  }
+  
+  return(g)
+}
+
+Rota <- create_accountancy(1, symmetric = T)
+Sabio <- create_accountancy(3, symmetric = T)
+SAT1 <- create_accountancy(5, symmetric = T)
+SAT2 <- create_accountancy(7, symmetric = T)
+
+
+test <- c("Rota", "Sabio", "SAT1", "SAT2") %>%
+  map(~{
+    
+  graph_name <- .x
+  g <- get(.x) 
+  temp <- g  %>%
+  set_edge_attr(., "k", value = edge_attr(., "weight")*100) %>%
+  categorical_SETSe(., force_var = "person_name", node_names = "name", k = "k") %>%
+    map(~{ .x %>% 
+        mutate(graph_id = graph_name)
+      })
+
+  }) %>%
+  transpose() %>%
+  map(~{bind_rows(.x)})
+
+
+
+
+test2 <- test$node_details
+
+test2 %>%
+  ggplot(aes(x = mean_tension, y = mean_elevation, colour = core_node)) + geom_point() +
+  facet_wrap(~graph_id) +
+  labs(title = "tension and strain of 1 vs all analysis of 4 accounting firms")
+
+```
+
+#four hospitals
+
+```{r}
+
+hospital_files <- list.files(file.path(ReedFolder, "hospitals", "raw_data"), full.names = T)
+
+file_name <-hospital_files[5]
+
+extract_graph_from_AT_output <-function(file_name, symmetric = TRUE){
+  
+  directed = TRUE
+  
+  org_lines <- read_lines(file_name)
+  
+  #find the first row of the matrix
+  mat_start <- grep(org_lines, pattern = "Blocked Adjacency Matrix")+6
+  #find the last row of the matrix
+  mat_end <- grep(org_lines, pattern = "Density matrix")-5
+  #get the position the limits of the matrix and the core periphary divider
+  mat_col_limits <- gregexpr(pattern = "\\|", text = org_lines[mat_start])[[1]]
+  
+  #get the point at which the core periphery split is found. diveded by two as there is a space between each columns
+  core_periph_limit <- (mat_col_limits[2]-mat_col_limits[1])/2
+  
+  clean_row <- org_lines[mat_start:mat_end][-core_periph_limit] %>%
+    map_chr(~{
+      print(.x)
+      str_sub(.x, start =mat_col_limits[1]+1, end =  mat_col_limits[3]-2) %>%
+        str_remove(., " \\|")
+      
+    })
+  
+  edge_list <- 1:length(clean_row) %>%
+    map_df(~{
+      occs <- gregexpr(pattern = "[0-9]", text = clean_row[.x])[[1]]
+        tibble(from = .x, to = as.integer(occs/2),
+               value = 1)
+    }) %>%
+    filter(to!=0) #if there is nothing on the row an index of -1 is returned, this is converted to 0... thus all zeros are removed
+  
+    if(symmetric){
+    
+    directed <- FALSE
+    
+    edge_list2 <- edge_list %>%
+      rename(from = to, to = from)
+    
+    edge_list <- bind_rows(edge_list, edge_list2) %>%
+      group_by(from, to)  %>%
+      summarise(weight = sum(value))
+    
+  }
+  
+  nodes <-  org_lines[mat_start:mat_end][-core_periph_limit] %>%
+    map_df(~{
+
+    info_string  <- str_sub(.x, start =1, end = mat_col_limits[1]-1)
+       #match any letter followed by at least one of anything that is not whitespace.. this allows accents
+   name_id <- str_extract(info_string, "[aA-zZ][^ ]+")
+   node_id <- str_extract(info_string, "[0-9]+")
+   
+   tibble(name_id = name_id, node_id = node_id)
+
+    }) %>%
+    mutate(node = 1:n(), core_node = node<core_periph_limit) %>%
+    select(node, everything())
+  
+  
+  g <- graph_from_data_frame(edge_list, directed = directed, vertices = nodes)
+  
+    if(symmetric){
+    
+    g <- g %>%
+      simplify()
+    
+  }
+  
+  return(list(edge_list = edge_list, nodes = nodes, g= g))
+  
+}
+
+
+#save the csv files
+hospital_files %>%
+  walk(~{
+    
+    file_name <- basename(.x) %>% str_remove(., "cent per ") %>% str_remove(., ".txt")
+    
+    graph_data <- extract_graph_from_AT_output(.x)
+    
+    write_csv(graph_data$edge_list, path = file.path(ReedFolder, "hospitals",  paste0(file_name, ".csv") ))
+    
+    write_csv(graph_data$nodes, path = file.path(ReedFolder, "hospitals",  paste0(file_name, "_nodes.csv") ))
+  
+      
+  })
+
+
+#missing 27 and 18 I assume 18 is also a nurse
+santa_helena_roles <- c(c("Psychologist", "Supervisor Maintenance", "Supervisor Cleaning", "Supervisor Cleaning", rep("Nursing", 11),
+  "Manager Human Resources"),
+c("Supervisor Housekeeping", "Nutritionist", "Nutritionist", "Administrator", "Manager Pharmacy", "Manager Pharmacy", "Social Worker",
+  "Wocial Worker", "Billing", "Billing"))
+
+
+santa_rosa_roles <- c(c("Superintendent", "Coordinator HR", "Coordinator Nursing", "Cooordinator Patient Relations",  "Coordinator Supplies",  "Coordinator Financial",  "Coordinator IT", "Coordinator Pharmacy",  "Auditing", "Quality Control", rep("Nursing", 7), "Coordinator ICU",
+  "Coordinator Housekeeping", "Coordinator Admissions"),
+c("Coordinator Surgery Center", "Coordinator Security", "Manager Planning", "Financial Director", "Administrator"))
+
+femina <-extract_graph_from_AT_output(hospital_files[1])$g
+hgu <-extract_graph_from_AT_output(hospital_files[2])$g
+hmvg <-extract_graph_from_AT_output(hospital_files[3])$g
+
+#the first string vector is the core the second is the periphery, there is no reason for them being separate except that I got the data in that format.
+santa_helena <- extract_graph_from_AT_output(hospital_files[4])$g %>% set_vertex_attr(., "role", value = santa_helena_roles)
+
+santa_rosa <-extract_graph_from_AT_output(hospital_files[5])$g %>% set_vertex_attr(., "role", value = santa_rosa_roles)
+
+hospital_embeddings <- c("femina", "hgu", "hmvg", "santa_helena", "santa_rosa") %>%
+  map(~{
+    
+  graph_name <- .x
+  g <- get(.x) %>%
+    set_vertex_attr(., "node_names", value = 1:vcount(.))
+  temp <- g  %>%
+  set_edge_attr(., "k", value = edge_attr(., "weight")*100) %>%
+  categorical_SETSe(., force_var = "name", node_names = "node_names", k = "k") %>%
+    map(~{ .x %>% 
+        mutate(graph_id = graph_name)
+      })
+
+  }) %>%
+  transpose() %>%
+  map(~{bind_rows(.x)})
+
+
+
+hospital_embeddings$node_details %>%
+  ggplot(aes(x = mean_tension, y = mean_elevation, colour = core_node)) + geom_point() +
+  facet_wrap(~graph_id) +
+  labs(title = "comparison of core periphery with SETSe placement")
+
+hospital_embeddings$node_details %>%
+  filter(!is.na(role)) %>%
+  mutate(is_nurse = ifelse(grepl(role, pattern = "Nurs"), "Nursing", "Other")) %>%
+    ggplot(aes(x = mean_tension, y = mean_elevation, colour = is_nurse)) + geom_point() +
+  facet_wrap(~graph_id)+
+  labs(title = "Comparison of nursing teams within a hospital using SETSe")
+
+```
+
+
+#bni
+business network international 
+```{r}
+
+
+load_bni <- function(file_path, directed = FALSE){
+  
+  load_data <-read_csv2(file_path) %>%
+    slice(-67) %>%
+    select(-Rows)%>%
+    separate(col = "X1", into = c("node", "name_id"), sep = "-") %>%
+  separate(col = name_id, into = c("rep", "company"), sep = " ", extra = "merge")
+  
+  nodes <- load_data %>% select(node, rep, company)
+  
+  edge_list <- load_data %>% select(-rep, - company) %>%
+    pivot_longer(cols= -node, names_to = "to", values_to = "value") %>%
+    filter(value!=0) %>%
+    rename(from = node)
+  
+  if(!directed){
+    
+    edge_list2 <- edge_list %>%
+      rename(from = to, to = from)
+    
+    edge_list <- bind_rows(edge_list, edge_list2) %>%
+      group_by(from, to)  %>%
+      summarise(weight = sum(value))
+    
+  }
+  
+  g <- graph_from_data_frame(edge_list, directed = directed, vertices = nodes)
+  
+  if(!directed){
+    
+    g <- g %>%
+      simplify()
+    
+  }
+  
+  return(g)
+}
+
+file_path <- file.path(ReedFolder, "bni", "bnifriendexcel.csv")
+
+bni_g <-load_bni(file.path(ReedFolder, "bni", "bnifriendexcel.csv")) %>%
+    set_vertex_attr(., "node_names", value = 1:vcount(.))
+
+bni_setse <- bni_g %>%
+  set_edge_attr(., "k", value = edge_attr(., "weight")*100) %>%
+  categorical_SETSe(., force_var = "name", node_names = "node_names", k = "k")
+
+
+bni_setse$node_details  %>%
+  ggplot(aes(x = mean_tension, y = mean_elevation , color = company)) + geom_point() +
+  gghighlight(mean_elevation< -0.01, mean_tension>0.15) +
+  labs(title = "BNI relationships in SETSe space")
+
+```
+
+```{r}
+
+
+```
+

@@ -102,11 +102,11 @@ k_options2 <- k_options %>%
   
   means_df <-0:6 %>% map_df(~{
     
-    
+    k <- .x
     
     save_path <- file.path(PLwd, "peel_strain_files", paste0("graph_ref_", graph_ref, "_k_", .x, ".rds") )
 if(!file.exists(save_path)){    
-  setse_complete <- auto_SETSe(g_out,
+  embeddings_data <- auto_SETSe(g_out,
                                force = "force",
                                distance = "distance",
                                edge_name = "edge_name",
@@ -115,6 +115,13 @@ if(!file.exists(save_path)){
                                sparse = FALSE, #The networks are small so dense networks are faster approx x3 in this case
                                verbose = F)
     
+  embeddings_data <- embeddings_data %>%
+    map(~{ .x %>%  
+        mutate(
+          k =k,
+          graph_type = graph_type,
+          graph_id = graph_ref)
+      })
     
 #The biconnected components don't work due to a naming error why?   
 
@@ -130,36 +137,25 @@ if(!file.exists(save_path)){
   #               verbose = TRUE)
   
   #by comparing the average tension experienced by each node we can 
-  edge_tension_per_node <- setse_complete$edge_embeddings %>%
-    select(edge_name, tension) %>%
-    separate(col = edge_name, into = c("from", "to"), sep = "_") %>%
-    pivot_longer(cols =c(from, to), names_to = "type", values_to = "node") %>%
-    group_by( node) %>%
-    summarise(mean_tension_per_node = mean(tension),
-              total_edges = n()) %>%
-    summarise(mean_tension_per_node = mean(mean_tension_per_node)) #this takes advantage of the skew in the mean to aid differentiation
-  #some nodes may have the same total tension but spread across different amount of nodes
-  
-  node_details <- left_join(setse_complete$node_embeddings, g_df$vertices, by = "node")
-  
-    
-    setse_complete$graphsummary <- tibble(
-      strain = mean(abs(setse_complete$edge_embeddings$strain)),
-      mean_A_elevation = node_details %>% 
-        filter(class=="A") %>%
-        pull(elevation) %>% mean,
-      mean_abs_elevation = mean(abs(node_details$elevation)),
-      median_abs_elevation =  median(abs(node_details$elevation)),
-      euc_elevation = sqrt(sum(node_details$elevation^2)),
-      tension = mean(abs(setse_complete$edge_embeddings$tension)),
-      residual_force =  mean(abs(setse_complete$node_embeddings$static_force))) %>%
-      bind_cols(edge_tension_per_node ) %>%
-      mutate(
-        k =.x,
-        graph_type = graph_type,
-             graph_id = graph_ref)
-    
-    saveRDS(setse_complete, save_path)
+
+  embeddings_data$node_detail <- embeddings_data$edge_embeddings %>% tibble() %>%
+    separate(., col = edge_name, into = c("from","to"), sep = "_") %>%
+    select(from, to, tension) %>%
+    pivot_longer(cols = c(from, to), names_to = "node_type", values_to = "node") %>%
+    select(tension, node) %>%
+    group_by(node) %>%
+    summarise(sum_tension = sum(tension),
+              mean_tension = mean(tension),
+              median_tension = median(tension),
+              euc_tension = sqrt(sum(tension^2))) %>%
+    left_join(embeddings_data$node_embeddings %>% tibble(), by = "node") %>%
+    left_join(as_data_frame(g_out, what = "vertices"), by = c("node"="name"))  %>%
+    mutate(
+      k =.x,
+      graph_type = graph_type,
+      graph_id = graph_ref)
+
+    saveRDS(embeddings_data, save_path)
     }
 
   })
@@ -174,7 +170,7 @@ if(!file.exists(save_path)){
 peel_strain_sum <- list.files(file.path(PLwd, "peel_strain_files"), full.names= T) %>% 
   map_df(~{
     setse_complete <- readRDS(.x)
-    Out  <-setse_complete$graphsummary 
+    Out  <-setse_complete$node_detail 
     return(Out)
   })
   
