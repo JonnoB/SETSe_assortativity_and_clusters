@@ -44,8 +44,10 @@ if(!dir.exists(file.path(PLwd, "facebook_classifier_year"))){
         #create edge list with attribute of the same class
         voted_preds <- g_list$edges %>%
           bind_rows(g_list$edges %>% rename(to2 = from, from2 = to) %>% rename(from = from2, to = to2)) %>%
-          left_join(g_list$vertices %>% select(name, from_target = year), by =c("from" ="name")) %>%
-          left_join(g_list$vertices %>% select(name, to_target = year), by =c("to" ="name")) %>%
+          #insert the cleaned target values to ensure the graph and the embeddings have the same values
+          #the values have to be converted to integers otherwise there is some wierd side effects. They are converted back to factors in the next code block
+          left_join(data_node_details %>% mutate(target = as.integer(as.character(target))) %>% select(node, from_target = target) , by =c("from" ="node")) %>%
+          left_join(data_node_details %>% mutate(target = as.integer(as.character(target)))  %>% select(node, to_target = target), by =c("to" ="node")) %>%
           mutate(same_class = (to_target ==from_target)*1) %>%
           #get the counts for each year for every node
           group_by(from, from_target, to_target) %>%
@@ -78,10 +80,10 @@ if(!dir.exists(file.path(PLwd, "facebook_classifier_year"))){
         
         knn_perf <- seq(from = 1, to = 21, by =2) %>% map_df(~{
           mod <- class::knn.cv(train = data_node_details %>% select(mean_tension2, elevation2), 
-                               cl = data_node_details$target, 
+                               cl = fct_drop(data_node_details$target), 
                                k = .x)
           
-          tibble(truth = data_node_details$target,
+          tibble(truth = fct_drop(data_node_details$target),
                  estimate = mod) %>%
             fb_metrics(truth = truth, estimate = estimate) %>%
             mutate(k = .x)
@@ -90,15 +92,12 @@ if(!dir.exists(file.path(PLwd, "facebook_classifier_year"))){
           rename(metric = .metric,
                  estimate = .estimate) %>%
           select(-.estimator) %>%
-          mutate(file_name = file_name,
-                 student_1 = sum(ifelse(data_node_details$target==1, 1, 0)),
-                 student_2 = sum(ifelse(data_node_details$target==1, 0, 1))) %>%
+          mutate(file_name = file_name) %>%
           left_join(network_knn, by = "metric" ) 
         
-        return(knn_perf)
 
       
-      saveRDS(performance_df, file = file.path(PLwd, "facebook_classifier", paste0(file_name, ".rds")))
+      saveRDS(knn_perf, file = file.path(PLwd, "facebook_classifier_year", paste0(file_name, ".rds")))
       
     }
     

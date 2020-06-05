@@ -336,14 +336,15 @@ ggsave(file.path(FiguresFolder, "Seperating_Peels_quintet.pdf"))
 #accuracy plot
 bind_rows(GEM_embeds, SETSe_embeds, node_perf) %>%
   filter(.metric =="accuracy") %>%
+  mutate(type2 = paste0("Type ", type,": ", model_type, " detection") %>% str_replace(., "_", " ")) %>%
   ggplot(aes(x = embeddings_method, y = .estimate, fill = embeddings_method)) + geom_boxplot()+
-  facet_wrap(type~model_type)  +
+  facet_wrap(~type2)  +
   guides(fill=FALSE) +
   theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
   labs(title = "Comparison of graph embeddings methods for class identification on Peel's Quintet",
-       y = "Accuracy of linear seperability",
-       x = "Embeddings method")
-      ggsave(file.path(FiguresFolder,  "peels_embedding_linear_sep.pdf"))        
+       y = "Accuracy",
+       x = "")
+ggsave(file.path(FiguresFolder,  "peels_embedding_linear_sep.pdf"))        
 
 #linearly seperably plot
 linear_sep <- bind_rows(GEM_embeds, SETSe_embeds, node_perf)%>%

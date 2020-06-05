@@ -22,7 +22,7 @@ if(!dir.exists(file.path(PLwd, "facebook_classifier"))){
         performance_df  <- 1 %>% map_df(~{    
         
           #the other periods shouldn't be used as 2004 has so few occurances
-          active_period <-2005 #list(2004L, 2005L, 2004:2005)[[.x]]
+          active_period <-2003:2010 #list(2004L, 2005L, 2004:2005)[[.x]]
           
         print(paste("file number", file_number  ,"file", file_name, "active_period", paste(active_period, collapse = ", ")))
         embeddings_data <- readRDS(file.path(PLwd, "facebook_embeddings/HPC_embeddings",paste0(file_name, ".rds")))
@@ -30,8 +30,8 @@ if(!dir.exists(file.path(PLwd, "facebook_classifier"))){
         #All data from the network prepped for prediction
         data_node_details <- embeddings_data$node_detail %>% 
           mutate(
-            target = ifelse(is.na(student_faculty) , student_faculty,0),
-            target = ifelse(student_faculty %in% 1:2, student_faculty, 0 ),
+            target = ifelse(is.na(gender) , gender,0),
+            target = ifelse(gender %in% 1:2, gender, 0 ),
             target = factor(target, levels = 0:2),
             euc_tension2 = (euc_tension-mean(euc_tension))/sd(euc_tension),
             mean_tension2 = (mean_tension-mean(mean_tension))/sd(mean_tension),

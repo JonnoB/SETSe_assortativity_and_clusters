@@ -1,0 +1,295 @@
+---
+title: "Untitled"
+author: "Jonathan Bourne"
+date: "04/06/2020"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+
+```{r}
+  
+appendix_figures <- file.path(LatexFolder, "Figures_appendix")
+```
+
+
+```{r}
+
+
+g <- read_rds(file.path(PLwd,"facebook100/facebook100_igraph", "Caltech36.rds"))  %>%
+  remove_small_components(.) %>%
+  facebook_year_clean() %>% prepare_SETSe_continuous(., node_names = "name", k = 1000, force_var = "year", 
+                                                     sum_to_one = FALSE, 
+                                                     distance = 100) 
+
+caltech_auto <- auto_SETSe(g, 
+                           tstep = 0.01,
+                           mass = 1,#sum(abs(vertex_attr(g, "force"))/2)/vcount(g), variable mass is useful when force is constant
+                           tol = 0,#sum(abs(vertex_attr(g, "force")))/1000,
+                           max = 3e4,
+                           step_size = 1,
+                           hyper_max = max(diameter(g)^2*100, 1000),
+                           verbose = TRUE, 
+                           sparse = TRUE, 
+                           sample = 100,
+                           static_limit = sum(abs(vertex_attr(g, "force"))))
+
+test <- caltech_auto$memory_df 
+
+caltech_auto$memory_df %>%
+  ggplot(aes(x = common_drag_iter, y = log(res_stat) )) + geom_point()
+test <- caltech_auto$memory_df
+
+caltech_auto$network_dynamics %>%
+  ggplot(aes(x = Iter, y = log10(static_force))) + geom_line()
+
+
+#noisy convergence  
+caltech_noisey <- SETSe(g, 
+                        tstep = 0.01,
+                        mass = 1,
+                        tol = 0,sum(abs(vertex_attr(g, "force")))/1000,
+                        sparse = TRUE, 
+                        sample = 100,
+                        static_limit = sum(abs(vertex_attr(g, "force")))*100,
+                        max_iter = 2e4,
+                        coef_drag = 0.75) 
+
+#divergence
+caltech_divergence <- SETSe(g, 
+                            tstep = 0.01,
+                            mass = 1,
+                            tol = 0,sum(abs(vertex_attr(g, "force")))/1000,
+                            sparse = TRUE, 
+                            sample = 100,
+                            static_limit = sum(abs(vertex_attr(g, "force")))*100,
+                            max_iter = 2e4,
+                            coef_drag = 0.65)
+
+#failure to converge
+caltech_convergefail <- SETSe(g, 
+               tstep = 0.01,
+               mass = 1,
+               tol = 0,sum(abs(vertex_attr(g, "force")))/1000,
+               sparse = TRUE, 
+               sample = 100,
+               static_limit = sum(abs(vertex_attr(g, "force")))*100,
+               max_iter = 2e4,
+               coef_drag = 0.7)
+
+
+bind_rows(caltech_auto$network_dynamics %>% mutate(type = "smooth"),
+          caltech_noisey$network_dynamics %>% mutate(type = "noisey"),
+          caltech_convergefail$network_dynamics %>% mutate(type = "failure to converge"),
+          caltech_divergence$network_dynamics %>% mutate(type = "divergence"))  %>%
+  filter(Iter <= 2e4) %>%
+  ggplot(aes(x = (Iter), y = log10(static_force), colour = type)) + geom_line() +
+  coord_cartesian(ylim = c(-2, 3)) +
+  labs(title = "Typical outcomes from running SETSe on a network",
+       y = "log 10 static force",
+       x = "number of iterations",
+       colour = "outcome type")
+ggsave(file.path(appendix_figures, "SETSe_outcomes.pdf"))
+
+
+test <- SETSe(g, 
+              tstep = 0.01,
+              mass = 1,
+              tol = sum(abs(vertex_attr(g, "force")))/1000,
+              sparse = TRUE, 
+              sample = 100,
+              static_limit = sum(abs(vertex_attr(g, "force"))),
+              max_iter = 3e4,
+              coef_drag = 0.78) 
+
+test$network_dynamics %>%
+  ggplot(aes(x = Iter, y = static_force)) + geom_line()
+
+
+very_damped_df <- SETSe(g, 
+              tstep = 0.01,
+              mass = 1,
+              tol = sum(abs(vertex_attr(g, "force")))/1000,
+              sparse = TRUE, 
+              sample = 100,
+              static_limit = sum(abs(vertex_attr(g, "force"))),
+              max_iter = 3e4,
+              coef_drag = 20) 
+
+bind_rows(
+  caltech_auto$network_dynamics %>% mutate(type = "auto"),
+  very_damped_df$network_dynamics %>% mutate(type = "very damped")) %>%
+  filter(Iter<10000) %>%
+  ggplot(aes(x = Iter, y = static_force, color = type)) + geom_line()
+
+
+min(very_damped_df$network_dynamics$static_force)
+
+#coeficients
+log10(0.01/seq(0.75, 0.85, by = 0.01))
+
+
+
+
+
+test <- caltech_auto$node_embeddings %>%
+  arrange(abs(static_force)) %>%
+  mutate(
+    abs_stat = abs(static_force),
+    cumsum_stat = cumsum(abs(static_force)),
+         node_count = 1:n(),
+         static_perc = cumsum_stat/sum(abs(static_force)),
+         node_perc = node_count/max(node_count))%>% 
+  left_join(tibble(node = vertex_attr(g, "name"),
+degree = degree(g)))
+
+
+test %>%
+  filter(node_perc>0.95) %>%
+  group_by(degree) %>%
+  summarise(counts = n()) %>%
+  mutate(perc = counts/sum(counts))
+
+test %>%
+  ggplot(aes(x = node_perc, y = static_perc)) + geom_line()
+
+```
+
+
+
+```{r}
+
+grid_df <- expand_grid( drag = c(seq(0.70, 0.85, by = 0.01), c(1,5,10,20,50,500)), time_step = c(0.01, 0.001, 0.1) )
+
+mid_tstep<-   ((10^seq(1, 4.5, length.out = 40))*0.01) %>%
+  map_df(~{
+    
+    print(.x)
+    temp <- SETSe(g, 
+                  tstep = 0.01,
+                  mass = 1,
+                  tol = sum(abs(vertex_attr(g, "force")))/1000,
+                  sparse = TRUE, 
+                  sample = 1,
+                  static_limit = sum(abs(vertex_attr(g, "force"))),
+                  max_iter = 3e3,
+                  coef_drag = .x) 
+    
+    tibble(static_force = min(temp$network_dynamics$static_force), drag = .x)
+    
+  })
+
+small_tstep <-  ( (10^seq(1, 4.5, length.out = 40))*0.001) %>%
+  map_df(~{
+    
+    print(.x)
+    temp <- SETSe(g, 
+                  tstep = 0.001,
+                  mass = 1,
+                  tol = sum(abs(vertex_attr(g, "force")))/1000,
+                  sparse = TRUE, 
+                  sample = 1,
+                  static_limit = sum(abs(vertex_attr(g, "force"))),
+                  max_iter = 3e3,
+                  coef_drag = .x) 
+    
+    tibble(static_force = min(temp$network_dynamics$static_force), drag = .x)
+    
+  })
+
+
+
+
+
+big_tstep<- ( (10^seq(1, 4.5, length.out = 40))*0.1) %>%
+  map_df(~{
+    
+    print(.x)
+    temp <- SETSe(g, 
+                  tstep = 0.1,
+                  mass = 1,
+                  tol = sum(abs(vertex_attr(g, "force")))/1000,
+                  sparse = TRUE, 
+                  sample = 1,
+                  static_limit = sum(abs(vertex_attr(g, "force"))),
+                  max_iter = 3e3,
+                  coef_drag = .x) 
+    
+    tibble(static_force = min(temp$network_dynamics$static_force), drag = .x)
+    
+  })
+
+bind_rows(big_tstep %>% mutate(type = "big", val = 0.1),
+          mid_tstep %>% mutate(type = "mid", val = 0.01),
+          small_tstep %>% mutate(type = "small", val = 0.001)) %>%
+  ggplot(., aes(x = drag/val, y = static_force, color = factor(val))) + geom_line() +
+  labs(title = "Relationship between, static force and the drag time-step ratio",
+       x = "drag over timestep",
+       y = "static force after 3000 iterations",
+       colour = "time step")
+ggsave(file.path(appendix_figures, "static_force_vs_drag_tstep.pdf"))
+
+caltech_auto2 <- auto_SETSe(g, 
+                           tstep = 0.001,
+                           mass = 1,#sum(abs(vertex_attr(g, "force"))/2)/vcount(g), variable mass is useful when force is constant
+                           tol = sum(abs(vertex_attr(g, "force")))/1000,
+                           max = 3e4,
+                           hyper_max = 3000,
+                           verbose = TRUE, 
+                           sparse = TRUE, 
+                           sample = 100,
+                           step_size = 1,
+                           static_limit = sum(abs(vertex_attr(g, "force"))),
+                           hyper_iters = 20,
+                           hyper_tol = 1
+                           )
+
+
+
+caltech_auto3 <- auto_SETSe(g, 
+                           tstep = 0.1,
+                           mass = 1,#sum(abs(vertex_attr(g, "force"))/2)/vcount(g), variable mass is useful when force is constant
+                           tol = sum(abs(vertex_attr(g, "force")))/1000,
+                           max = 3e4,
+                           hyper_max = 3e3,
+                           verbose = TRUE, 
+                           sparse = TRUE, 
+                           sample = 1,
+                           step_size = 0.1,
+                           static_limit = sum(abs(vertex_attr(g, "force"))),
+                           hyper_iters = 50,
+                           hyper_tol = 1
+                           )
+
+
+test_drag <- SETSe(g, 
+                   tstep = 0.001,
+                   mass = 1,
+                   tol = sum(abs(vertex_attr(g, "force")))/1000,
+                   sparse = TRUE, 
+                   sample = 1,
+                   static_limit = sum(abs(vertex_attr(g, "force"))),
+                   max_iter = 3e4,
+                   coef_drag = 10) 
+
+caltech_auto2$memory_df %>%
+  ggplot(aes(x = common_drag_iter, y = (res_stat) )) + geom_point()
+
+caltech_auto3$network_dynamics %>%
+  ggplot(aes(x = (Iter), y = log10(static_force))) + geom_point()
+
+
+
+ test_drag$network_dynamics %>%
+  ggplot(aes(x = Iter, y = log(static_force) )) + geom_point()
+
+test2 <- test2$network_dynamics
+
+test2%>%
+  ggplot(aes(x = Iter, y = static_force)) + geom_point()
+
+test3 <- caltech_auto3$memory_df
+
+```
+

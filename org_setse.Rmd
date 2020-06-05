@@ -471,18 +471,147 @@ load_bni <- function(file_path, directed = FALSE){
 
 file_path <- file.path(ReedFolder, "bni", "bnifriendexcel.csv")
 
-bni_g <-load_bni(file.path(ReedFolder, "bni", "bnifriendexcel.csv")) %>%
+bni_files <- list.files(file.path(ReedFolder, "bni"), full.names = T)
+
+bni_frequency_g <-load_bni(bni_files[1]) %>%
     set_vertex_attr(., "node_names", value = 1:vcount(.))
 
-bni_setse <- bni_g %>%
-  set_edge_attr(., "k", value = edge_attr(., "weight")*100) %>%
-  categorical_SETSe(., force_var = "name", node_names = "node_names", k = "k")
+bni_friends_g <-load_bni(bni_files[2]) %>%
+    set_vertex_attr(., "node_names", value = 1:vcount(.))
+
+bni_references_g <-load_bni(bni_files[3]) %>%
+    set_vertex_attr(., "node_names", value = 1:vcount(.))
+
+bni_trust_g <-load_bni(bni_files[4]) %>%
+    set_vertex_attr(., "node_names", value = 1:vcount(.))
+
+#avra has no visits
+bni_visits_g <-load_bni(bni_files[5]) %>%
+    set_vertex_attr(., "node_names", value = 1:vcount(.))
 
 
-bni_setse$node_details  %>%
+bni_setse_list <- ls(pattern = "bni_.+_g") %>%
+  map(~{
+    
+    type_name <- .x %>% str_remove(., "bni_") %>% str_remove(., "_g")
+    
+    print(type_name)
+    out <-get(.x) %>%
+      set_vertex_attr(., "centrality", value = centr_betw(., directed = F)$res) %>%
+      set_vertex_attr(., "degree", value = degree(.)) %>%
+      set_edge_attr(., "k", value = edge_attr(., "weight")*100) %>%
+      remove_small_components() %>%
+      categorical_SETSe(., force_var = "name", node_names = "node_names", k = "k") %>%
+      map(~{.x %>% mutate(type = type_name)})
+    
+    return(out)
+    
+  }) %>% transpose
+  
+
+
+refferals_recieved <- as_data_frame(bni_references_g) %>%
+  #left_join(as_data_frame(bni_references_g, what = "vertices"), by = c("to"="name")) %>%
+  group_by(to) %>%
+  summarise(refferals_recieved = sum(weight),
+   #         company = first(company)
+   ) %>%
+  rename(node = to)
+
+refferals_given <- as_data_frame(bni_references_g) %>%
+  #left_join(as_data_frame(bni_references_g, what = "vertices"), by = c("to"="name")) %>%
+  group_by(from) %>%
+  summarise(refferals_given = sum(weight),
+   #         company = first(company)
+   ) %>%
+  rename(node = from)
+
+test <- bind_rows(bni_setse_list$node_details ) %>%
+  left_join(.,test %>% filter(type == "references") %>%
+              select(node, elev2 = mean_elevation)) %>%
+  left_join(refferals_recieved)  %>%
+  left_join(refferals_given) %>%
+  mutate(refferals_given = ifelse(is.na(refferals_given), 0, refferals_given),
+         refferals_recieved = ifelse(is.na(refferals_recieved), 0, refferals_recieved),
+         tot_ref = refferals_given+refferals_recieved)
+
+test %>%
   ggplot(aes(x = mean_tension, y = mean_elevation , color = company)) + geom_point() +
-  gghighlight(mean_elevation< -0.01, mean_tension>0.15) +
+ # gghighlight(mean_elevation< -0.01, mean_tension>0.15) +
+  
   labs(title = "BNI relationships in SETSe space")
+
+
+
+test %>%
+  ggplot(aes(x = mean_tension, y = mean_elevation)) +
+  facet_wrap(~type) +
+  geom_point() +
+#  gghighlight(rank(mean_tension)<3 & rank(mean_elevation)<3) +
+   gghighlight(company %in% c("AVRA", "FEDERAL INVEST", "ZAPPSTI")) +
+     geom_point(aes(colour = company)) +
+  labs(title = "BNI relationships in SETSe space")
+
+
+
+test %>%
+  ggplot(aes(x  = mean_elevation)) +
+  facet_wrap(~type) +
+  geom_density() 
+  
+
+test %>%
+  group_by(type) %>%
+  mutate(rank_type = rank(mean_elevation)) %>%
+  ggplot(aes(x = refferals_recieved, y = refferals_given)) +
+    facet_wrap(~type) +
+  geom_point(aes(colour = rank_type)) +
+  scale_color_viridis_c() 
+
+
+test2 <- test %>%
+  select(node, refferals_recieved, refferals_given, type, mean_elevation, company, elev2, tot_ref) %>%
+  pivot_wider(names_from = type, values_from = mean_elevation) %>%
+  mutate(tot_ref_sqrt = log(tot_ref),
+         visits2 = visits^2)
+
+ref_mod <- lm(tot_ref_sqrt~visits, data = test2)
+
+summary(ref_mod)
+
+active_formula <- tot_ref_sqrt~visits
+
+summary( lm(active_formula, data = test2))$r.squared
+
+annotations_df <- names(test2)[7:11] %>%map_df(~{
+r_val <- as.formula(paste0("tot_ref_sqrt~", .x)) %>%
+    lm(., data = test2) %>%
+    summary(.) %>% .$r.squared 
+
+x_pos <- test %>% filter(type ==.x) %>% pull(mean_elevation) %>% mean
+
+tibble(type = .x, r_val = paste0("R^2=",round(r_val, 3)), x = x_pos, y = 1)
+})
+
+
+test %>%
+  ggplot(aes(x = mean_elevation, y = log(tot_ref))) +
+  geom_point() +
+  facet_wrap(~type, scales = "free_x") +
+  scale_color_viridis_c() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(title = "relationship between SETSe embeddings and total references",
+       x = "mean elevation",
+       y = "logarithm of total references recieved and given") +
+  geom_text(data = annotations_df, aes(x = x, y = y, label = r_val))
+
+
+test %>%
+  ggplot(aes(x = log(centrality), y = log(tot_ref))) +
+  geom_point() +
+  facet_wrap(~type, scales = "free_x") +
+  scale_color_viridis_c() +
+  geom_smooth(method = "lm", se = FALSE)
 
 ```
 

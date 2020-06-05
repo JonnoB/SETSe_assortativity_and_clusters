@@ -8,10 +8,29 @@ editor_options:
 ---
 
 
+Possibly reviewers
+Yong-Yeol Ahn
+Assistant Professor
+School of Informatics and Computing
+Indiana University
+
+Alessandro Flammini
+Professor @ School of Informatics, Computing and Engineering at Indiana University, 
+
+Any one in Emilio Ferrara's group at USC
+
+
+Stephen G. Kobourov
+Professor
+Department of Computer Science
+University of Arizona
+
+%postdoc of Kobourov
+Felice DeLuca
+
 ```{r}
 library(e1071)
 ```
-
 
 #Set up
 ```{r Setup}
@@ -45,6 +64,25 @@ list.files("/home/jonno/Useful_PhD__R_Functions", pattern = ".R", full.names = T
 
 
 ```
+
+#4 node 3 edge
+provides the elevation position of the nodes in the opening example
+```{r}
+
+example_g <-graph_from_data_frame(tibble(from=c("A", "B", "B"), to = c("B", "C", "D")),
+              directed = FALSE,
+              vertices = tibble(node = c("A", "B", "C", "D"), node_name = node, force = c(2L,0L,-1L,-1L)))
+
+example_df <- example_g %>%
+  prepare_SETSe_continuous(., node_names = "node_name", k = 1000, force_var = "force") %>% 
+  auto_SETSe()
+
+example_df$node_embeddings %>% pull(elevation) %>% round(., 4)
+
+
+
+```
+
 
 #Peels quintet
 
@@ -236,6 +274,153 @@ test %>%
 ggsave(file.path(FiguresFolder, "Seperating_Peels_quintet.pdf"))
 ```
 
+
+##check tension
+
+I am not sure that the dimensions don't interact
+```{r}
+
+#two node network
+matrix(c(0,0,0,
+         1,3,4), nrow = 2, byrow = T)
+
+diff <- c(1,3,4)
+
+H3 <- sqrt(sum(diff^2))
+
+H1 <- sqrt(sum(diff[c(1,2)]^2))
+H2 <- sqrt(sum(diff[c(1,3)]^2))
+
+H12 <- sqrt(sum(c(H1, H2)^2))
+k <- 100
+#end point of line
+v1 <- c(1,0,0)
+v2 <- c(0,3,0)
+v3 <- c(0,0,4)
+h <- v1+v2+v3
+
+
+sqrt(1+3^2)
+sqrt(1+16)
+
+h_length <- sqrt(sum(h^2))
+strain <- h_length-1
+tension <- 100*strain
+
+
+cosine_sim <- function(v, h){
+  
+vh <- sum(v*h)
+
+sqrtv <- sqrt(sum(v^2))
+sqrth <- sqrt(sum(h^2))
+out <- vh/(sqrtv*sqrth)
+#absv <- sum(abs(v))
+#absh <- sum(abs(h))
+#out <- vh/(absv*absh)
+
+return(out)
+}
+
+
+cosine_sim2 <- function(v, h){
+  #this is the same as cosine sim as the vectors are all one dimensional meaning the 
+  #formula simplifies
+v2 <- sum(v)
+
+sqrtv <- sqrt(sum(v^2))
+sqrth <- sqrt(sum(h^2))
+out <- v2/(sqrth)
+#absv <- sum(abs(v))
+#absh <- sum(abs(h))
+#out <- vh/(absv*absh)
+
+return(out)
+}
+
+
+cosine_sim3 <- function(h, d){
+  
+  abs(h[d])/sqrt(sum(h^2))
+  
+}
+
+cosine_sim4 <- function(h, d){
+  #calculates the fraction of the hypotenuse contributed thus the fraction of tension
+  h[d]^2/sum(h^2)
+  
+}
+
+
+list(v1, v2,v3) %>%
+  map_dbl(~cosine_sim2(v = .x, h = h)) %>%  {.^2}
+
+v1_simp <-c(1, 0)
+v2_simp <- c(0,3)
+h_simp <- c(1,3)
+
+list(v1_simp, v2_simp) %>%
+  map_dbl(~cosine_sim2(v = .x, h = h_simp)) %>% {.*sqrt(10)}
+  
+1:3 %>%
+  map_dbl(~cosine_sim3(h,.x)) %>% {.^2}
+
+1:3 %>%
+  map_dbl(~cosine_sim4(h,.x))
+
+
+edge_ten2 <- function(a,d=1, k=1){
+  
+  k*(sqrt(a^2+ d^2)-d)
+  
+}
+
+edge_ten <- function(a,d=1, k=1){
+#calculate the edge tension of a n dimensional triangle  
+  k*(sqrt(sum(c(a^2, d^2)))-d)
+  
+}
+
+
+(c(edge_ten(3),edge_ten(4)))
+edge_ten(c(3,4))
+
+
+((c(edge_ten(3),edge_ten(4)))/edge_ten(c(3,4)))^2 %>% sum
+
+
+edge_ten(c(3,4))
+
+
+edge_dims <- c(1,3,40)  
+
+  edge_dims %>%
+  map_dbl(~cosine_sim2(.x,edge_dims)) %>% {.*edge_ten(edge_dims[-1])}
+
+  c(1,3) %>%
+  map_dbl(~cosine_sim2(.x,h[c(1,2)])) %>% {.^2*edge_ten(c(3))}
+
+
+    c(1,4) %>%
+  map_dbl(~cosine_sim2(.x,h[c(1,3)])) %>% {.^2*edge_ten(c(3))}
+
+    
+    
+    c(  c(1,3) %>%
+  map_dbl(~cosine_sim2(.x,h[c(1,2)])) %>% {.^2*edge_ten(c(3))},
+
+
+    c(1,4) %>%
+  map_dbl(~cosine_sim2(.x,h[c(1,3)])) %>% {.^2*edge_ten(c(3))}) %>% sum
+
+a<- 3
+d<- 10
+k <- 1
+     k*(sqrt(sum(c(a^2, d^2)))-1)
+    
+```
+
+
 #Facebook data
 
 In this section I analyse the facebook 100 dataset. I got this from https://archive.org/details/oxford-2005-facebook-matrix
@@ -245,8 +430,13 @@ keep only student types 1 and 2
 
 normalise edge force to some fixed value e.g. 0.001 per edge
 
+
+This is a paper on a facebook study that went a bit far and the data had to be removed.
+worth commenting on probably
+https://www-sciencedirect-com.libproxy.ucl.ac.uk/science/article/pii/S0378873308000385
 ```{r}
 
+   g_df <- readRDS(uni_files[1]) %>% as_data_frame(., what = "vertices")
 
 #convert the facebook .mat files to igraph format and save as rds
 #this is commented out as it takes a long time and checking to see if the files are generated has not been done.
@@ -283,7 +473,6 @@ test2 <- left_join(uni_stats, biconnected_data) %>% as_tibble() %>%
 
 source(file = file.path(SubcodeFolder, "process_facebook_embeddings.R"))
 
-
 ```
 
 ##100 tension elevation
@@ -298,10 +487,13 @@ This plots the tension and elevation for all the uni's in the facebook
     mutate(abs_elevation = abs(elevation)) %>%
     group_by(file_name) %>%
     summarise_at(., vars(sum_tension:elevation , abs_elevation), mean) %>%
-    left_join(uni_stats, by = "file_name")
+    left_join(uni_stats, by = "file_name") %>%
+  mutate(node_edge = nodes/edges)
   
 
 test <- cor(node_details_df %>% select(sum_tension:euc_tension, abs_elevation, contains("assort")))# %>% as_tibble()
+test <- cor(node_details_df %>% select( contains("assort")))# %>% as_tibble()
+
   
   #plot the facebook uni's by elevation and tension
 #There is no relationship with size of uni which is good.
@@ -313,9 +505,9 @@ relate_figure <-  node_details_df %>%
     ggplot(aes(y = abs_elevation, x = mean_tension, colour = year_assort, text = file_name)) + geom_point() + 
     scale_color_viridis_c() +
     labs(title = "The average elevation and tension embeddings of the facebook 100 dataset.",
-         y = "absolute mean elevation per node",
-         x = "The mean of the per node tension",
-         color = "class\nassortativity")
+         y = "mean absolute node elevation ",
+         x = "mean node tension",
+         color = "year\nassortativity")
 
 relate_figure 
 ggsave(file.path(FiguresFolder, "facebook_100_elev_tens.pdf"))
@@ -332,10 +524,10 @@ node_details_df %>% ggplot(aes(x = student_assort)) + geom_density()
   summary(assort_mod)
   #It appears that a linear model predicting gender assortativity on the year embedding
   #has a stronger relationship than the straight corellation between gender and year assortativty.
-  assort_mod <- lm(student_assort ~ abs_elevation + mean_tension + euc_tension, node_details_df)
+  assort_mod <- lm(student_assort ~ abs_elevation  + mean_tension, node_details_df)
   summary(assort_mod)
   #the linear model predicting gender assortyativity from year is nothing
-    lm(gen_assort ~ year_assort, node_details_df) %>% summary
+    lm(student_assort ~ year_assort, node_details_df) %>% summary
     
   
   node_details_df %>%
@@ -400,7 +592,7 @@ box_cox_data_iter <- MASS::boxcox(time_taken__iter_mod, lambda = seq(-3, 3, 1/10
 tibble(lambda = box_cox_data_iter$x, log_likelihood = box_cox_data_iter$y) %>%
   arrange(-log_likelihood)
   
-#actuall time per iteration seems to be linear to the number of edges
+#actually time per iteration seems to be linear to the number of edges
   time_taken_df %>%
     ggplot(aes(x = edges, y = time_per_iter, colour = )) + geom_point()+
     scale_color_viridis_c()+
@@ -418,7 +610,7 @@ tibble(lambda = box_cox_data_iter$x, log_likelihood = box_cox_data_iter$y) %>%
 #this could be related to the communities that form
 
 time_taken_df %>%
-  ggplot(aes(x = edges*log(edges), y = time_taken )) + geom_point()+
+  ggplot(aes(x = edges, y = time_taken )) + geom_point()+
   labs(title ="Time to convergence is heteroscedastic for the facebook social networks",
        y = "minutes to convergence",
        x = "number of edges")
@@ -427,6 +619,18 @@ time_taken_mod <- lm(time_taken~edges, time_taken_df)
 time_taken_mod2 <- lm(log_time_taken~log_edges, time_taken_df)
 summary(time_taken_mod)
 summary(time_taken_mod2)
+
+
+time_taken_df %>%
+  select(edges, time_taken, time_per_iter) %>%
+  pivot_longer(., cols = time_taken:time_per_iter, names_to = "type") %>%
+  mutate(type = str_replace_all(type, "_", " ")) %>%
+  ggplot(aes(x = edges, y = value)) + geom_point() +
+  facet_wrap(~type, scales = "free_y") +
+  labs(title = "Time complexity of SETSe on iteration and covnergence of Facebook 100 data",
+       x = "number of edges",
+       y = "seconds")
+ggsave(file.path(FiguresFolder, "time_complexity.pdf"))
 
 box_cox_data <-MASS::boxcox(time_taken_mod, lambda = seq(-3, 3, 1/100))
 
@@ -525,8 +729,8 @@ penn_test <-  readRDS(file.path("/home/jonno/setse_1_data/facebook_embeddings/HP
 #          year %in% 2004:2005
 ) %>%
   # filter(log(euc_tension)>-1) %>%
- #  filter(year %in% c(2004, 2005, 2006)) %>%
-   ggplot(aes(x = log(euc_tension), y = elevation, color = factor(year))) + geom_point()+
+   filter(year %in% c(2005)) %>%
+   ggplot(aes(x = (mean_tension), y = elevation, color = factor(student_faculty))) + geom_point()+
    labs(title = "SETSe embeddings Penn State",
         color = "Year of enrollment")
  +
@@ -538,7 +742,7 @@ ranger_df %>%
 #  theme(legend.position="bottom")
 
 #means doesn't seem very useful here, probably becuase so much is going on
- fb_metrics <- metric_set(accuracy, kap, bal_accuracy)
+ fb_metrics <- metric_set(accuracy, kap, bal_accuracy, f_meas)
 ranger_df <- penn_test$node_detail %>% filter(gender !=0,
                                          (year %% 1)==0,
                                          year %in% c(2005,2005),
@@ -706,24 +910,34 @@ I will use the results only for 2005.
 for 2005 SETSe outperforms graph neighbour voting for all values of k, for balanced accuracy, accuracy and cohens kappa
 
 ```{r}
-
+ fb_metrics <- metric_set(accuracy, kap, bal_accuracy, f_meas)
 source(file = file.path(SubcodeFolder, "compare_setse_with_graph.R"))
 
-class_perf <- list.files(file.path(PLwd, "facebook_classifier"), full.names = TRUE) %>%
+class_perf <- list.files(file.path(PLwd, "facebook_classifier_student"), full.names = TRUE) %>%
   map_df(readRDS) %>%
+  mutate(estimate	= ifelse(is.na(estimate	), 1, estimate),
+         network_knn = ifelse(is.na(network_knn), 1, network_knn)) %>%
   mutate(diff = estimate-network_knn,
-         better = (diff>0)*1)
+         better = (diff>0)*1,
+         naive = network_type2/(network_type1+network_type2),
+         better_naive = estimate>naive)  
+
+class_perf %>%
+  group_by(file_name) %>%
+  summarise_all(first) %>%# pull(naive) %>% mean
+  ggplot(aes(x = naive)) + geom_density()
 
 test <-class_perf %>%
 #  filter(metric!= "accuracy") %>%
   group_by(metric, active_period, k) %>%
   summarise(better = mean(better, na.rm = T),
+            better_naive = mean(better_naive, na.rm  = T),
             na_val = sum(is.na(better)),
             student_1 = sum(student_1),
             student_2 = sum(student_2))
 
 test %>%
-  filter(active_period==2005) %>%
+ # filter(active_period==2005) %>%
   ggplot(aes(x = k, y = better, colour = metric)) + geom_line() +
   labs(title = "Predicting student type from year embeddings relative to graph neighbour voting",
        x = "number of nearest neighbours in SETSe space k",
@@ -734,24 +948,78 @@ ggsave(file.path(FiguresFolder,  "facebook_knn_vs_graph_vote.pdf"))
 test2 <- test%>%
   filter(active_period==2005)
 
-class_perf %>%
+class_perf2 <- class_perf %>%
   filter(active_period==2005) %>%
-  mutate(diff = estimate-network_knn) %>%
-  #filter(metric!= "accuracy") %>%
-#  filter(metric== "bal_accuracy") %>%
-  ggplot(aes(x = factor(k), y = diff, fill = metric)) + geom_boxplot()+
-  facet_grid(metric~active_period)
+  group_by(metric, k) %>%
+  summarise(estimate = mean(estimate),
+            network_knn = mean(network_knn)) 
 
+class_perf %>%
+  ggplot(aes(x = as.factor(k), y = estimate, 
+             #group = file_name,
+             color = metric)) + geom_boxplot()+
+  labs(title = "f1 score original")
 
-
+prop.test(55, 100, alternative = "greater")
 
 class_perf %>%
   filter(file_name =="Yale4") %>%
-  filter(active_period==2005) %>%
+#  filter(active_period==2005) %>%
   mutate(diff = estimate-network_knn) %>%
 ggplot(aes(x = k, y = diff, colour = metric)) + geom_point()+
   facet_wrap(~file_name)
 
+
+class_perf_year <- list.files(file.path(PLwd, "facebook_classifier_year"), full.names = TRUE) %>%
+  map_df(readRDS) %>%
+  mutate(estimate	= ifelse(is.na(estimate	), 1, estimate),
+         network_knn = ifelse(is.na(network_knn), 1, network_knn))%>%
+  mutate(diff = estimate-network_knn,
+         better = (diff>0)*1)  
+
+test_year <-class_perf_year %>%
+  group_by(metric, k) %>%
+  summarise(better = mean(better, na.rm = T),
+            mean_diff = mean(diff),
+            na_val = sum(is.na(better)))
+
+test_year %>%
+  ggplot(aes(x = k, y = better, colour = metric)) + geom_line() +
+  labs(title = "Predicting student type from year embeddings relative to graph neighbour voting",
+       x = "number of nearest neighbours in SETSe space k",
+       y ="Fraction of times SETSe beats graph neighbour voting")
+
+
+class_perf_year2 <- class_perf_year %>%
+  group_by(metric, k) %>%
+  summarise(estimate = mean(estimate)) %>%
+  filter(metric!="mcc")
+
+class_perf_year2 %>%
+  ggplot(aes(x = k, y = estimate, 
+             color = metric)) + geom_line()
+
+test <- class_perf %>%
+  filter(metric =="f_meas") 
+
+
+bind_rows(
+  class_perf_year %>%
+  group_by(metric, k) %>%
+  summarise(estimate = mean(estimate)) %>%
+  filter(metric!="mcc") %>% mutate(type = "year") ,
+class_perf %>%
+  filter(active_period==2005) %>%
+  group_by(metric, k) %>%
+  summarise(estimate = mean(estimate)) %>% mutate(type = "type")
+) %>%
+mutate(type = factor(type, levels = c("year", "type"))) %>%
+  ggplot(aes(x = k, y = estimate, 
+             #group = file_name,
+             color = metric)) + geom_line() +
+  facet_grid(~type) +
+  labs(title = "Performance of k nearest neighbour voting on year embeddings and the\nhidden embedding student type")
+ggsave(file.path(FiguresFolder,  "facebook_knn_vs_graph_vote.pdf")) 
 ```
 
 ##2 dimension projections
@@ -1275,7 +1543,10 @@ detected_communities %>%
   filter(graph_id %in% seq(100, 500, by = 100)) %>%
   ggplot(aes(x = tension_mean_range, y = elevation_range, colour = sub_class)) + geom_point() +
   facet_wrap(~graph_class) +
-  labs(title = "The position of individual node in each graph type")
+  labs(title = "The position of individual nodes in each graph type of Peel's Quintet",
+       x = "node tension",
+       y = "node elevation",
+       color = "sub class")
   ggsave(file.path(FiguresFolder,  "peels_quintet_groups_in_setse_space.pdf"))   
  
 
@@ -1386,6 +1657,14 @@ all the data is from http://vlado.fmf.uni-lj.si/pub/networks/data/ucinet/UciData
 files <- list.files("/home/jonno/setse_1_data/conflict_networks", full.names = T)
 ```
 
+
+This is the thesis associated with a collection of schools dataset.
+I don't know if there is any school level information available
+
+https://search-proquest-com.libproxy.ucl.ac.uk/docview/304516167?pq-origsite=primo
+
+data set available from; there are some problems with it.
+http://moreno.ss.uci.edu/data.html
 
 ##Medici
 
@@ -1870,3 +2149,201 @@ test_node <- dominance_list$node
 
 test_edge <- dominance_list$edge
 ```
+
+#highschool
+
+This first section downloads all the data
+
+data from
+http://moreno.ss.uci.edu/data.html
+
+errors
+
+1 has gender incorrectly coded
+48 is missing atributes and was deleted
+
+
+```{r}
+
+
+
+school_path_1 <- file.path(PLwd, "highschool/raw")
+school_path_2 <- file.path(PLwd, "highschool/graphs")
+
+
+file_tibble <- tibble(file_names = list.files(school_path_1 )) %>%
+  mutate(id = file_names %>% str_remove(.,"comm") %>% str_remove(., "(_|\\.).+") %>% as.integer(),
+         is_att = grepl("att", file_names))
+
+unique(file_tibble$id) %>%
+  walk(~{
+    print(.x)
+    temp <- file_tibble %>%
+      filter(id==.x) %>%
+      arrange(is_att)
+    
+    edges <- file.path(school_path_1, temp$file_names[1]) %>%
+      read_csv(, skip = 4, col_names = F) %>%
+  separate(col = X1, into = c("from", "to", "weight"), sep = " +") %>%
+      mutate(from = trimws(from) %>% as.integer(),
+             to = trimws(to) %>% as.integer(),
+             weight = trimws(weight) %>% as.integer())
+
+    nodes <- file.path(school_path, temp$file_names[2]) %>%
+      read_lines(.) %>%
+      as_tibble
+    
+    nodes <- nodes %>%
+      slice((grep("DATA:", nodes$value)+1):nrow(.))%>%
+      mutate(value = trimws(value)) %>%
+      separate(col = value, into = c("sex", "ethnicity", "grade", "school"), sep = " +") %>%
+      mutate(node = 1:nrow(.),
+             school = ifelse(is.na(school), 1, school)) %>%
+      select(node, everything()) %>%
+      filter(complete.cases(.))
+    
+   g <-graph_from_data_frame(edges, directed = FALSE, vertices = nodes) 
+   
+   g%>%
+      saveRDS(., file = file.path(school_path_2, paste0("school_", temp$id[1], ".rds")))
+
+    
+    
+  })
+
+
+school_info <- list.files(school_path_2, full.names = T) %>%
+  map_df(~{
+    
+    g <- readRDS(.x)
+    
+    comps <-  components(g)
+    
+  temp <- as_data_frame(g, what = "vertices")  %>% as_tibble()
+  
+  eth_fract <- 0:5 %>%
+    map_df(~{
+      
+      temp %>%
+        summarise(value = sum(ethnicity==.x)/nrow(temp)) %>%
+        mutate(ethnicity = paste0("eth_",.x))
+      
+    }) %>%
+    pivot_wider(., names_from = ethnicity, values_from = value) %>%
+    bind_cols(      temp %>%
+        summarise(eth_err = sum(ethnicity > 5)/nrow(temp)) )
+  
+  grade_fract <- temp %>%
+        summarise(grade_valid = sum(grade %in% 7:12)/nrow(temp))
+  
+  
+  tibble(file = basename(.x), 
+         graph_id = file %>% str_remove(., "school_") %>% str_remove(., ".rds") %>% as.integer(),
+         students = nrow(temp), 
+         components = comps$no,
+         schools = length(unique(temp$school)),
+         edge_ratio = ecount(g)/vcount(g),
+         sex_assort = assortativity(g, vertex_attr(g, "sex")),
+         eth_assort = assortativity(g, vertex_attr(g, "ethnicity")),
+         grade_assort = assortativity(g, vertex_attr(g, "grade")),
+         sch_assort = assortativity(g, vertex_attr(g, "school")),
+         fract_largest_comp = max(comps$csize)/students,
+         sex_1 = sum(temp$sex==1)/students,
+         sex_2 = sum(temp$sex==2)/students) %>%
+    bind_cols(eth_fract, grade_fract)
+  
+  })
+
+
+
+
+
+#no pattern in edge density
+school_info %>%
+  filter(id != 1) %>%
+  ggplot(aes(x = students, y = edge_ratio, colour = factor(schools))) + geom_point()
+
+
+school_info %>%
+ # filter(schools ==2) %>%
+  select(contains("assort")) %>%
+  pivot_longer(cols = everything()) %>%
+    ggplot(aes(x = value, color = name)) + geom_density()
+
+
+
+list.files(school_path_2, full.names = T)
+
+
+school_info %>%
+  filter(schools ==2) %>%
+  pull(file) %>% 
+  walk(~{
+    
+    graph_name <- .x %>% str_remove(., "school_") %>% str_remove(., ".rds") %>% as.integer()
+    
+     out <- readRDS(file.path(school_path_2,.x)) %>%
+       set_vertex_attr(., "node_names", value = 1:vcount(.)) %>%
+       remove_small_components() %>%
+  set_edge_attr(., "k", value = edge_attr(., "weight")*100) %>%
+        prepare_SETSe_binary(., node_names = node_names, k = NULL, 
+                             force_var = "school", positive_value = 1) %>%
+       SETSe_bicomp(tol =2e-4, 
+                      verbose = F) %>%
+    map(~{ .x %>% 
+        mutate(graph_id = graph_name)})
+     
+     saveRDS(out, file.path(PLwd, "highschool", "embeds_school", .x))
+    
+  })
+
+
+test <- list.files(file.path(PLwd, "highschool", "embeds_school")) %>%
+  map_df(~{
+     
+    temp <- read_rds(file.path(PLwd, "highschool", "embeds_school", .x))
+    
+    edge_vals <- temp$edge_embeddings %>%
+      separate(col = "edge_name", into = c("from", "to"), sep = "-") %>%
+      select(from, to, tension, strain) %>%
+      pivot_longer(., cols = c(from, to), values_to ="node") %>%
+      group_by(node) %>%
+      summarise(tension = mean(tension),
+                strain = mean(strain))
+    
+    g_df <- read_rds(file.path(PLwd, "highschool", "graphs", .x)) %>%
+      as_data_frame(., what = "vertices") %>% rename(node = name)
+    
+    
+    out <- left_join(temp$node_embeddings %>%select(node, elevation, graph_id), edge_vals, by = "node") %>%
+      left_join(g_df , by = "node")
+    
+   return(out)
+    
+  }) %>%
+  filter(!is.na(tension)) %>%
+  group_by(graph_id) %>%
+  summarise(
+    strain = mean(strain),
+    elevation = mean(abs(elevation)),
+    tension = mean(tension)
+          ) %>%
+  left_join(school_info, by = "graph_id")
+
+
+
+test %>%
+  ggplot(aes(x = (sch_assort), y = log(elevation), color = sqrt(sch_assort))) + geom_point()+
+  scale_color_viridis_c()
+
+  lm(sch_assort ~ elevation + tension , test %>% mutate(elevation =log(elevation))) %>% summary()
+
+chem <- read_csv("/home/jonno/Downloads/BradleyMeltingPointDatasetClean.csv")
+
+```
+
+This package might be able to read smiles strings into R.
+I don't know how they would then be conveted to igraph objects though
+https://bioconductor.org/packages/devel/bioc/vignettes/ChemmineR/inst/doc/ChemmineR.html
+
+
