@@ -4,7 +4,7 @@
 # # 
 # # MYRIAD RUN SCRIPT
 # # 
-### This script creates the embeddings for the facebook 100 dataset. It uses 
+### This script creates the embeddings for the facebook 100 dataset. It only uses auto_setse not setse_bicomp. it is for reference only
 # # 
 # # 
 ###########################
@@ -87,21 +87,22 @@ file_name <- file.path(save_data_files_path,
 
   g <- readRDS(uni_file_path)  %>% #load file
     remove_small_components()  %>%
-    facebook_year_clean() %>% prepare_SETSe_continuous(., node_names = "name", k = 1000, force_var = "year", 
+    facebook_year_clean() %>% 
+    prepare_SETSe_continuous(., node_names = "name", k = 1000, force_var = "year", 
                                                        sum_to_one = FALSE, 
                                                        distance = 100) 
   
-  embeddings_data <- SETSe_bicomp(g, 
-                                  tstep = 0.01,
-                                  mass = 1,#sum(abs(vertex_attr(g, "force"))/2)/vcount(g), variable mass is useful when force is constant
-                                  tol = sum(abs(vertex_attr(g, "force")))/1000,
-                                  verbose = FALSE,
-                                  sparse = TRUE, 
-                                  sample = 200,
-                                  static_limit = sum(abs(vertex_attr(g, "force"))), #static_force is more than the starting force. just stop.
-                                  hyper_tol = 0.1,
-                                  max_iter = 60000,
-                                  hyper_max = 6000) 
+  embeddings_data <- auto_SETSe(g, 
+                                tstep = 0.01,
+                                mass = 1,#sum(abs(vertex_attr(g, "force"))/2)/vcount(g), variable mass is useful when force is constant
+                                tol = sum(abs(vertex_attr(g, "force")))/1000,
+                                verbose = FALSE,
+                                sparse = TRUE, 
+                                sample = 200,
+                                static_limit = sum(abs(vertex_attr(g, "force"))), #static_force is more than the starting force. just stop.
+                                hyper_tol = 0.1,
+                                max_iter = 60000,
+                                hyper_max = 6000) 
   
   node_detail <- embeddings_data$edge_embeddings %>% tibble() %>%
     separate(., col = edge_name, into = c("from","to"), sep = "-") %>%

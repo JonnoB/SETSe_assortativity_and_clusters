@@ -23,6 +23,7 @@ g <- read_rds(file.path(PLwd,"facebook100/facebook100_igraph", "Caltech36.rds"))
                                                      sum_to_one = FALSE, 
                                                      distance = 100) 
 
+start_time <- Sys.time()
 caltech_auto <- auto_SETSe(g, 
                            tstep = 0.01,
                            mass = 1,#sum(abs(vertex_attr(g, "force"))/2)/vcount(g), variable mass is useful when force is constant
@@ -33,7 +34,11 @@ caltech_auto <- auto_SETSe(g,
                            verbose = TRUE, 
                            sparse = TRUE, 
                            sample = 100,
+                           hyper_tol = 0.1,
                            static_limit = sum(abs(vertex_attr(g, "force"))))
+stop_time <- Sys.time()
+
+stop_time-start_time
 
 test <- caltech_auto$memory_df 
 
@@ -83,11 +88,12 @@ bind_rows(caltech_auto$network_dynamics %>% mutate(type = "smooth"),
           caltech_noisey$network_dynamics %>% mutate(type = "noisey"),
           caltech_convergefail$network_dynamics %>% mutate(type = "failure to converge"),
           caltech_divergence$network_dynamics %>% mutate(type = "divergence"))  %>%
+  mutate(static_fract = static_force/sum(abs(vertex_attr(g, "force")))) %>%
   filter(Iter <= 2e4) %>%
-  ggplot(aes(x = (Iter), y = log10(static_force), colour = type)) + geom_line() +
-  coord_cartesian(ylim = c(-2, 3)) +
+  ggplot(aes(x = (Iter), y = log10(static_fract), colour = type)) + geom_line() +
+  coord_cartesian(ylim = c(-5, 0)) +
   labs(title = "Typical outcomes from running SETSe on a network",
-       y = "log 10 static force",
+       y = "log 10 fraction of initial static force",
        x = "number of iterations",
        colour = "outcome type")
 ggsave(file.path(appendix_figures, "SETSe_outcomes.pdf"))
@@ -130,29 +136,6 @@ min(very_damped_df$network_dynamics$static_force)
 log10(0.01/seq(0.75, 0.85, by = 0.01))
 
 
-
-
-
-test <- caltech_auto$node_embeddings %>%
-  arrange(abs(static_force)) %>%
-  mutate(
-    abs_stat = abs(static_force),
-    cumsum_stat = cumsum(abs(static_force)),
-         node_count = 1:n(),
-         static_perc = cumsum_stat/sum(abs(static_force)),
-         node_perc = node_count/max(node_count))%>% 
-  left_join(tibble(node = vertex_attr(g, "name"),
-degree = degree(g)))
-
-
-test %>%
-  filter(node_perc>0.95) %>%
-  group_by(degree) %>%
-  summarise(counts = n()) %>%
-  mutate(perc = counts/sum(counts))
-
-test %>%
-  ggplot(aes(x = node_perc, y = static_perc)) + geom_line()
 
 ```
 
@@ -290,6 +273,164 @@ test2%>%
   ggplot(aes(x = Iter, y = static_force)) + geom_point()
 
 test3 <- caltech_auto3$memory_df
+
+```
+
+
+#biconnected
+```{r}
+start_time <- Sys.time()
+auto_test <-  auto_SETSe(g, 
+                           tstep = 0.01,
+                           mass = 1,#sum(abs(vertex_attr(g, "force"))/2)/vcount(g), variable mass is useful when force is constant
+                           tol = sum(abs(vertex_attr(g, "force")))/1000,
+                           max = 3e4,
+                           step_size = 1,
+                           hyper_max = max(diameter(g)^2*100, 1000),
+                           verbose = TRUE, 
+                           sparse = TRUE, 
+                           sample = 100,
+                           hyper_tol = 0.1,
+                           static_limit = sum(abs(vertex_attr(g, "force"))))
+stop_time <- Sys.time()
+stop_time-start_time
+
+biconnected_list <- biconnected_components(g)
+
+auto_agg <- auto_test$node_embeddings %>%
+  arrange(abs(static_force)) %>%
+  mutate(
+    abs_stat = abs(static_force),
+    cumsum_stat = cumsum(abs(static_force)),
+         node_count = 1:n(),
+         static_perc = cumsum_stat/sum(abs(static_force)),
+         node_perc = node_count/max(node_count),
+    is_artic = as.integer(node) %in%as.vector(biconnected_list$articulation_points)) %>% 
+  left_join(tibble(node = vertex_attr(g, "name"),
+degree = degree(g)))
+
+
+test %>%
+  ggplot(aes(x = node_perc, y = static_perc)) + geom_line()
+
+
+start_time <- Sys.time()
+caltech_bicomp <- SETSe_bicomp(g,
+                               tol = sum(abs(vertex_attr(g, "force")))/1000,
+                               hyper_tol = 0.1,
+                               hyper_iters = 3000,
+                               verbose = T)
+stop_time <- Sys.time()
+
+stop_time-start_time
+
+sum((caltech_bicomp$time_taken$time_diff))
+
+test <- caltech_bicomp$time_taken
+
+
+bicomp_agg <- caltech_bicomp$node_embeddings %>%
+  arrange(abs(static_force)) %>%
+  mutate(
+    abs_stat = abs(static_force),
+    cumsum_stat = cumsum(abs(static_force)),
+         node_count = 1:n(),
+         static_perc = cumsum_stat/sum(abs(static_force)),
+         node_perc = node_count/max(node_count),
+    is_artic = as.integer(node) %in% as.vector(biconnected_list$articulation_points))%>% 
+  left_join(tibble(node = vertex_attr(g, "name"),
+degree = degree(g)))
+
+
+class(bicomp_agg$node)
+
+auto_agg %>%
+ # filter(node_perc>0.95) %>%
+  group_by(degree) %>%
+  summarise(counts = n(),
+            total = sum(abs(static_force)),
+            is_artic = sum(is_artic)) %>%
+  mutate(perc = counts/sum(counts))
+
+
+bicomp_agg %>%
+  #filter(node_perc>0.95) %>%
+  group_by(degree) %>%
+  summarise(counts = n(),
+            total = sum(abs(static_force))) %>%
+  mutate(perc = counts/sum(counts))
+
+bicomp_agg %>%
+  ggplot(aes(x = node_perc, y = static_perc)) + geom_line()
+
+
+
+sum(abs(auto_agg$static_force))
+sum(abs(bicomp_agg$static_force))
+
+(sum(abs(caltech_auto$node_embeddings$static_force))-sum(abs(caltech_bicomp$node_embeddings$static_force)))/
+  sum(abs(caltech_bicomp$node_embeddings$static_force))
+
+```
+
+```{r}
+
+process_facebook_embeddings(file.path(PLwd, "facebook_embeddings", "facebookauto"), 
+                            file.path(PLwd, "facebook_embeddings", "processed_embeddings_auto"))
+
+
+fb_time_taken <- readRDS(file.path("/home/jonno/setse_1_data/facebook_embeddings/processed_embeddings", 
+                                   "facebook_time_taken_process.rds" )) %>%
+  mutate(time = as.numeric(stop_time - start_time))
+
+
+
+fb_time_taken_auto <- readRDS(file.path("/home/jonno/setse_1_data/facebook_embeddings/processed_embeddings_auto", "facebook_time_taken_process.rds" ))  %>%
+  mutate(time = as.numeric(stop_time - start_time))
+
+relative_time <- fb_time_taken %>%
+  select(file_name, time_bicomp = time) %>%
+  left_join(fb_time_taken_auto %>%
+  select(file_name, time_auto = time), by = "file_name") %>%
+  mutate(
+    time_diff = time_auto-time_bicomp,
+    time_fract = (time_bicomp- time_auto)/time_auto,
+         time_fract2 = time_bicomp/time_auto) %>%
+  left_join(uni_stats %>% select(file_name, nodes, edges))
+
+
+relative_time %>%
+#  mutate(time_diff = ifelse(is.na(time_diff), (10*3600)-time_bicomp, time_diff),
+ #        time_fract2 = ifelse(is.na(time_fract2), time_bicomp/(10*3600), time_fract2)) %>%
+ggplot(aes(x = time_diff/3600, y = time_fract2, color = log10(edges))) + geom_point()+
+  scale_color_viridis_c()+
+  labs(title ="Time analysis of bi-connected SETSe vs auto-SETSe",
+       x = "Difference in hours between auto-SETSe and biconnected SETSe",
+       y ="time ratio of bi-connected to auto-SETSe")
+
+ggsave(file.path(appendix_figures, "bicomp_vs_auto.pdf"))
+
+relative_time %>%
+  mutate(
+    time_auto = ifelse(is.na(time_auto), (10*3600), time_auto),
+    time_diff = ifelse(is.na(time_diff), (10*3600)-time_bicomp, time_diff),
+         time_fract2 = ifelse(is.na(time_fract2), time_bicomp/(10*3600), time_fract2)) %>%
+  summarise(time_auto = (sum(time_bicomp)-sum(time_auto))/sum(time_auto),
+            fract_better = sum(time_diff>0)/98,
+            time_diff = sum(time_diff)/3600,
+            time_fract2 = mean(time_fract2))
+
+
+relative_time %>%
+  left_join(biconnected_data) %>%
+  ggplot(aes(x = time_diff/3600, y = time_fract2, color = edges/total)) + geom_point()+
+  scale_color_viridis_c()
+
+
+test <- relative_time %>%
+  left_join(biconnected_data) 
+
+cor(test$time_diff, test$total, use = "complete.obs")
 
 ```
 

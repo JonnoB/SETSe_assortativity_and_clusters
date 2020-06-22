@@ -21,9 +21,11 @@ from gem.embedding.node2vec import node2vec
 from gem.embedding.sdne import SDNE
 from argparse import ArgumentParser
 
+dims = 8
+
 plwd = "/home/jonno/setse_1_data"
 peels_folder = plwd + "/peels_graphml"
-benchmark_folder = plwd + "/peel_benchamrk_embeddings"
+benchmark_folder = plwd + "/peel_benchmark_embeddings" + str(dims)
 # Set the working directory to load the data from
 os.chdir(peels_folder)
 # get the list of files to embed
@@ -31,11 +33,11 @@ graphml_file_paths = os.listdir(peels_folder)
 
 models = []
 # Load the models you want to run
-models.append(HOPE(d=4, beta=0.01))
-models.append(LaplacianEigenmaps(d=2))
-models.append(LocallyLinearEmbedding(d=2))
+models.append(HOPE(d=dims*2, beta=0.01))
+models.append(LaplacianEigenmaps(d=dims))
+models.append(LocallyLinearEmbedding(d=dims))
 # node2vec can go here if I can get it to work
-models.append(SDNE(d=4, beta=5, alpha=1e-5, nu1=1e-6, nu2=1e-6, K=3, n_units=[50, 15, ], rho=0.3, n_iter=50, xeta=0.01,
+models.append(SDNE(d=dims*2, beta=5, alpha=1e-5, nu1=1e-6, nu2=1e-6, K=3, n_units=[50, 15, ], rho=0.3, n_iter=50, xeta=0.01,
                    n_batch=100,
                    modelfile=['enc_model.json', 'dec_model.json'],
                    weightfile=['enc_weights.hdf5', 'dec_weights.hdf5']))

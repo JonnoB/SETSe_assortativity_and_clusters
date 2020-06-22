@@ -15,6 +15,12 @@ uni_stats <-1:length(uni_files) %>%
     data_id <- basename(uni_files[.x]) %>% str_remove(., ".rds") %>% str_remove(., "[ a-zA-Z]+") %>% str_remove(., " ")
     components_info <- components(g)
     
+    student_type_df <-g %>%
+      remove_small_components() %>%
+      as_data_frame(what = "vertices")
+    
+    
+    
     print(uni_name)
     
     g_df <- as_data_frame(g, what = "vertices") %>% tibble
@@ -30,6 +36,8 @@ uni_stats <-1:length(uni_files) %>%
            max_component = max(components_info$csize),
            max_comp_perc = max_component/nodes,
            total_components = components_info$no,
+           student_type_1 = sum(student_type_df$student_faculty==1),
+           student_type_2 = sum(student_type_df$student_faculty==2),
            dorms = length(unique(g_df$dorm)),
             year_assort = assortativity_nominal(g, types = as.factor(vertex_attr(g, "year")), directed = F),
             gen_assort = assortativity_nominal(g, types = as.factor(vertex_attr(g, "gender")), directed = F),

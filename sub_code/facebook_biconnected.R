@@ -45,6 +45,7 @@ biconnected_data <- 1:length(file_paths) %>%
       max_size = max(component_size),
       min = min(component_size),
       mean_size = mean(component_size),
+      mean_non_max_size = (sum(component_size)-max(component_size))/(total-1),
       median_size = median(component_size),
       component_over_two = sum(component_size>2))
     

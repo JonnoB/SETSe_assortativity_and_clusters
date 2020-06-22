@@ -28,6 +28,12 @@ University of Arizona
 %postdoc of Kobourov
 Felice DeLuca
 
+
+repo on some interesting road safety network data
+https://github.com/Moradii/stlnpp
+The paper
+https://doi.org/10.1016/j.spasta.2019.100400
+
 ```{r}
 library(e1071)
 ```
@@ -45,7 +51,7 @@ arrange <- dplyr::arrange
 map <- purrr::map
 sapply(packages, library, character.only = TRUE)
 
-library(NetworkSpringEmbedding)
+library(rSETSe)
 
 #Set up file system to read the correct folders this switches between aws and windows mode
 
@@ -104,9 +110,8 @@ rm(plot_list)
  
 
 ```
+
 ##Peel Strain
-
-
 
 ```{r}
 #requires the "quintet" and "class_data_df" data frames
@@ -452,6 +457,13 @@ source(file = file.path(SubcodeFolder, "facebook_biconnected.R"))
 #the smaller components can be disgarded
 source(file = file.path(SubcodeFolder, "create_facebook_uni_stats.R"))
 
+uni_stats %>%
+  summarise(nodes = sum(max_component),
+            student_type_1 = sum(student_type_1),
+            student_type_2 =sum(student_type_2)) %>%
+  mutate(perc_1 = student_type_1/nodes,
+         perc_2 = student_type_2/nodes)
+
 #I will use dorms over 0.5% of the total known university populations
 #I will use years with over 1% of the population the rest will be reset to the mean of the students to not exert force
 
@@ -472,6 +484,12 @@ test2 <- left_join(uni_stats, biconnected_data) %>% as_tibble() %>%
 #source(file = file.path(SubcodeFolder, "facebook_embeddings_year.R"))
 
 source(file = file.path(SubcodeFolder, "process_facebook_embeddings.R"))
+
+
+process_facebook_embeddings(file.path(PLwd, "facebook_embeddings" ,"facebookbicomp"), 
+                            file.path(PLwd, "facebook_embeddings" , "HPC_embeddings"))
+process_facebook_embeddings(file.path(PLwd, "facebook_embeddings", "facebookbicomp"), 
+                            file.path(PLwd, "facebook_embeddings", "HPC_embeddings_auto"))
 
 ```
 
@@ -558,6 +576,7 @@ This chunk shows that the iteration time complexity and the network memory deman
 
 fb_network_dynamics <- readRDS(file.path("/home/jonno/setse_1_data/facebook_embeddings/processed_embeddings", "facebook_network_dynamics.rds" ))
 
+
 #This is interesting but not very useful
   # fb_network_dynamics %>%
   #   left_join(uni_stats, by = c("file_name")) %>%
@@ -582,6 +601,11 @@ fb_network_dynamics <- readRDS(file.path("/home/jonno/setse_1_data/facebook_embe
            log_time_per_iter = log(time_per_iter),
            log_time_taken = log(time_taken),
            log_edges = log(edges))
+  
+  
+
+test <- uni_stats %>% select(file_name) %>%
+  left_join(time_taken_df)
   
   time_taken__iter_mod <- lm(time_per_iter~edges, time_taken_df)
 summary(time_taken__iter_mod)
@@ -1520,35 +1544,37 @@ source(file = file.path(SubcodeFolder, "node_position.R"))
  
 #Use ARI to compare the quality of all clustering techniques
 combos_df <- expand_grid(names = detected_communities %>% select(contains("clustering")) %>% names, graph_id = unique(detected_communities$graph_id))
- 
-        test_ARI <-1:nrow(combos_df) %>%
-          map_df(~{
-            print(.x)
-            temp <-detected_communities %>%
-              filter(graph_id == combos_df$graph_id[.x])
-            
-            tibble(
-              name = combos_df$names[.x],
-              graph_id = combos_df$graph_id[.x],
-              graph_class = unique(temp$graph_class),
-              ARI = adjustedRandIndex(temp$sub_class, temp %>% pull(combos_df$names[.x]) ))
-            
-          })
-        
-        #plot the results
-        #The ability to cluster graphs that have communities or groups that are not defined by their linking to each other greatly outstrips everything else
- 
-         #plot and example of the true communities
+
+test_ARI <-1:nrow(combos_df) %>%
+  map_df(~{
+    print(.x)
+    temp <-detected_communities %>%
+      filter(graph_id == combos_df$graph_id[.x])
+    
+    tibble(
+      name = combos_df$names[.x],
+      graph_id = combos_df$graph_id[.x],
+      graph_class = unique(temp$graph_class),
+      ARI = adjustedRandIndex(temp$sub_class, temp %>% pull(combos_df$names[.x]) ))
+    
+  })
+
+#plot the results
+#The ability to cluster graphs that have communities or groups that are not defined by their linking to each other greatly outstrips everything else
+
+#plot and example of the true communities
 detected_communities %>%
+  mutate(sub_class = str_replace(sub_class, "_", " ")) %>%
   filter(graph_id %in% seq(100, 500, by = 100)) %>%
   ggplot(aes(x = tension_mean_range, y = elevation_range, colour = sub_class)) + geom_point() +
   facet_wrap(~graph_class) +
   labs(title = "The position of individual nodes in each graph type of Peel's Quintet",
        x = "node tension",
        y = "node elevation",
-       color = "sub class")
-  ggsave(file.path(FiguresFolder,  "peels_quintet_groups_in_setse_space.pdf"))   
- 
+       color = "sub class") +
+  theme(legend.position = c(0.9, 0.1), legend.justification = c(1, 0)) #positions the legend in the middle of the 6th panel
+ggsave(file.path(FiguresFolder,  "peels_quintet_groups_in_setse_space.pdf"))   
+
 
  #plot showing how SETSe does the comparisons
  detected_communities %>%
@@ -2345,5 +2371,4 @@ chem <- read_csv("/home/jonno/Downloads/BradleyMeltingPointDatasetClean.csv")
 This package might be able to read smiles strings into R.
 I don't know how they would then be conveted to igraph objects though
 https://bioconductor.org/packages/devel/bioc/vignettes/ChemmineR/inst/doc/ChemmineR.html
-
 

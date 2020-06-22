@@ -2,7 +2,7 @@
 #this loads the facebook embeddings then saves each list element as a separate file so as not to clog up the memory
 
 if(!(length(list.files(file.path("/home/jonno/setse_1_data/facebook_embeddings", 
-                                 "processed_embeddings")))==7)){
+                                   "processed_embeddings")))==7)){
   
   file_paths <- list.files("/home/jonno/setse_1_data/facebook_embeddings/HPC_embeddings", full.names = T)
   
