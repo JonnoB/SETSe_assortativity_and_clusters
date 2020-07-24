@@ -34,8 +34,14 @@ https://github.com/Moradii/stlnpp
 The paper
 https://doi.org/10.1016/j.spasta.2019.100400
 
+
+
 ```{r}
 library(e1071)
+
+  
+  list.files("/home/jonno/rSETSe/R", pattern = ".R", full.names = T) %>%
+    walk(~source(.x))
 ```
 
 #Set up
@@ -482,21 +488,409 @@ test2 <- left_join(uni_stats, biconnected_data) %>% as_tibble() %>%
 #This creates year embeddings for all the facebook data. 
 #It is commented out as the code is does not check if the file has been made
 #source(file = file.path(SubcodeFolder, "facebook_embeddings_year.R"))
+#source(file = file.path(SubcodeFolder, "process_facebook_embeddings.R"))
 
-source(file = file.path(SubcodeFolder, "process_facebook_embeddings.R"))
 
+process_facebook_embeddings(file.path(PLwd, "facebook_embeddings" ,"facebook"), 
+                            file.path(PLwd, "facebook_embeddings" , "processed_embeddings"))
+process_facebook_embeddings(file.path(PLwd, "facebook_embeddings", "facebookauto"), 
+                            file.path(PLwd, "facebook_embeddings", "processed_embeddings_auto"))
 
-process_facebook_embeddings(file.path(PLwd, "facebook_embeddings" ,"facebookbicomp"), 
-                            file.path(PLwd, "facebook_embeddings" , "HPC_embeddings"))
-process_facebook_embeddings(file.path(PLwd, "facebook_embeddings", "facebookbicomp"), 
-                            file.path(PLwd, "facebook_embeddings", "HPC_embeddings_auto"))
+process_facebook_embeddings(file.path(PLwd, "facebook_embeddings", "facebook1000"), 
+                            file.path(PLwd, "facebook_embeddings", "processed_embeddings_1000"))
 
 ```
+
+
+##bug fix
+
+delete this when fixed
+
+
+hyper tolerance is 0.3 for all except for "UCSD34", "GWU54", "UC33", "Tennessee95"  which need hyper tolerance 0.1
+
+92 98 99 100 
+
+
+task id 98 UF21" has issues converging block 202. Appears to go into a loop
+```{r}
+
+dep <- envirDependencies("package:rSETSe")
+
+# visualization
+plot(dep)
+
+
+#There appears to be errors in the embeddings, This is probably either a minor bug in the functions or I didn't remove the free nodes before embedding. This is to find out
+how_many_nodes  <- readRDS(
+  file.path(PLwd, "facebook_embeddings" , "processed_embeddings",
+            "facebook_node_detail.rds" )) %>%
+  group_by(file_name) %>%
+  summarise(count = n(),
+            static_force = sum(abs(static_force)),
+            tens = mean(mean_tension),
+            tens_b = mean(mean_tension, na.rm = T)) %>%
+  left_join(HPC_time_process)
+
+how_many_nodes %>%
+  ggplot(aes(x = as.numeric(time), y = log10(count), colour = (static_force)>200)) +geom_point()
+
+
+  HPC_node_details <- readRDS(
+  file.path("/home/jonno/setse_1_data/facebook_embeddings/processed_embeddings",
+            "facebook_node_detail.rds" )) %>%
+  group_by(file_name) %>%
+  summarise(static_force = sum(abs(static_force)),
+            net_tension = mean(net_tension),
+            median_net_tension = median(net_tension))
+
+  
+  
+  HPC_node_details_test <- readRDS(
+  file.path("/home/jonno/setse_1_data/facebook_embeddings/processed_embeddings",
+            "facebook_node_detail.rds" )) %>%
+  filter(file_name == "Reed98")
+
+HPC_mem <- readRDS(
+  file.path("/home/jonno/setse_1_data/facebook_embeddings/processed_embeddings_1000",
+            "facebook_memory_df.rds" ))
+
+HPC_nodes <- readRDS(
+  file.path("/home/jonno/setse_1_data/facebook_embeddings/processed_embeddings_1000",
+            "facebook_node_embeddings.rds" ))%>%
+  filter(file_name == "Rochester38")
+
+HPC_test <- readRDS(
+  file.path("/home/jonno/setse_1_data/facebook_embeddings/processed_embeddings_1000",
+            "facebook_time_taken_process.rds" )) %>%
+  mutate(diff = difftime(stop_time,start_time))
+
+
+HPC_dyn <- readRDS(
+  file.path("/home/jonno/setse_1_data/facebook_embeddings/processed_embeddings",
+            "facebook_network_dynamics.rds" )) %>%
+  filter(Iter !=0) %>%
+  group_by(file_name) %>%
+  mutate(relative = static_force/first(static_force),
+         max_rel = max(relative)) %>%
+    ungroup
+
+test <- HPC_dyn %>%
+  #filter(max_rel >1,
+  #       Iter <5000) %>%
+  left_join(how_many_nodes %>% select(file_name, count)) %>%
+  filter((count %in% unique(count)[rank(unique(count))<=5])) #get the 5 smallest uni's
+
+
+test %>%
+  ggplot(aes(x = t, y = log10(relative), color = file_name)) + 
+  geom_line() 
+ # coord_cartesian(ylim = c(-5, 1.1))# +
+ # scale_color_brewer(type = "qual")
+
+completed_unis <- list.files("/home/jonno/setse_1_data/facebook_embeddings/facebook", pattern = ".rds") %>%
+  str_remove(., ".rds")
+
+missing <- uni_stats %>%
+  mutate(rank = rank(nodes)) %>%
+  filter(!(file_name %in% completed_unis))
+
+embeddings_data <- readRDS(
+  file.path("/home/jonno/setse_1_data/facebook_embeddings/facebook1000",
+            "Texas84.rds" ))$embeddings_data
+
+
+HPC_time_process <- readRDS(
+  file.path("/home/jonno/setse_1_data/facebook_embeddings/processed_embeddings",
+            "facebook_time_taken_process.rds" )) %>%
+  mutate(time = difftime(stop_time, start_time, units = "mins"))
+
+HPC_drag_vals <- readRDS(
+  file.path("/home/jonno/setse_1_data/facebook_embeddings/processed_embeddings",
+            "facebook_memory_df.rds" )) %>%
+  ungroup %>%
+  filter(!is.na(target_area)) %>%
+  group_by(file_name, component) %>%
+  slice_tail(., n = 1) %>%
+  left_join(readRDS(
+  file.path("/home/jonno/setse_1_data/facebook_embeddings/processed_embeddings",
+            "facebook_time_taken.rds" )))
+
+HPC_drag_vals$
+
+HPC_drag_vals %>%
+  ggplot(aes(x = log10(nodes), y = common_drag_iter))+ geom_point()
+"UIllinois20.rds"
+g <- readRDS(file.path("/home/jonno/setse_1_data/facebook100/facebook100_igraph", "Caltech36.rds"))  %>% #load file
+  remove_small_components()  %>%
+  facebook_year_clean() %>% prepare_SETSe_continuous(., node_names = "name", k = 1000, force_var = "year", 
+                                                     sum_to_one = FALSE, 
+                                                     distance = 100) 
+
+test_df <- readRDS(file.path("/home/jonno/setse_1_data/facebook100/facebook100_igraph", "Haverford76.rds"))  %>%
+  as_data_frame(., what = "vertices")
+
+force ="force"
+distance = "distance"
+edge_name = "edge_name"
+k = "k"
+tstep = 0.01
+mass = NULL #variable mass is useful when force is constant
+tol = sum(abs(vertex_attr(g, "force")))/1000
+verbose = TRUE
+sparse = TRUE
+sample = 200
+static_limit = sum(abs(vertex_attr(g, "force"))) #static_force is more than the starting force. just stop.
+hyper_tol = 0.1
+max_iter = 60000
+step_size = 1
+hyper_max = 6000
+hyper_iters = 10
+static_limit = NULL
+drag_max <- 100
+tstep_change <- 0.5
+
+
+profvis(create_balanced_blocks2(g, 
+                               force = force,
+                               bigraph = bigraph))
+
+
+system.time(test1 <- create_balanced_blocks2(g, 
+                               force = force,
+                               bigraph = bigraph))
+
+system.time(test2 <- create_balanced_blocks(g, 
+                               force = force,
+                               bigraph = bigraph))
+
+1:12 %>%
+  map(~{
+    
+    all.equal(as_data_frame(test1[[.x]], what = "vertices"), as_data_frame(test2[[.x]], what = "vertices"))
+    
+  })
+
+
+start_time <- Sys.time()
+embeddings_data <- SETSe_bicomp(g, 
+                                tstep = 0.2,
+                                mass = NULL, #variable mass is useful when force is constant
+                                tol = sum(abs(vertex_attr(g, "force")))/1000,
+                                verbose = TRUE,
+                                sparse = TRUE, 
+                                sample = 100,
+                                static_limit = NULL,#sum(abs(vertex_attr(g, "force"))), #static_force is more than the starting force. just stop.
+                                hyper_tol = 0.3,
+                                hyper_iters = 50,
+                                max_iter = 60000,
+                                hyper_max = 1000,
+                                drag_min = 1,
+                                drag_max = 100,
+                                noisey_termination = TRUE) 
+stop_time <- Sys.time()
+stop_time-start_time
+
+start_time <- Sys.time()
+embeddings_data <- SETSe_shift(
+  g = balanced_blocks[[OriginBlock_number]],
+  force = "force",
+  distance = "distance",
+  edge_name = "edge_name",
+  k = "k",
+  tstep =0.01,
+  mass = ifelse(is.null(mass), 
+                mass_adjuster(balanced_blocks[[OriginBlock_number]], 
+                              force = "force", resolution_limit = TRUE), mass),
+  max_iter = 20000,
+  coef_drag = 6.93/2,
+  tol = sum(abs(vertex_attr(g, "force")))/1000,
+  sparse = TRUE,
+  two_node_solution = TRUE,
+  sample = 100,
+  static_limit = NULL,
+ # noisey_termination = FALSE
+ tstep_change = 0.5
+ 
+)
+stop_time <- Sys.time()
+stop_time-start_time
+
+g_edges <- as_data_frame(g)
+g_vertices <- as_data_frame(g, what = "vertices")
+
+start_time <- Sys.time()
+embeddings_data2 <- SETSe(
+  g = balanced_blocks[[OriginBlock_number]],
+  force = "force",
+  distance = "distance",
+  edge_name = "edge_name",
+  k = "k",
+  tstep =0.0064,
+  mass = ifelse(is.null(mass), 
+                mass_adjuster(balanced_blocks[[OriginBlock_number]], 
+                              force = "force", resolution_limit = TRUE), mass),
+  max_iter = 20000,
+  coef_drag = 6.93/2,
+  tol = sum(abs(vertex_attr(g, "force")))/1000,
+  sparse = TRUE,
+  two_node_solution = TRUE,
+  sample = 100,
+  static_limit = NULL,
+  noisey_termination = FALSE
+ 
+)
+stop_time <- Sys.time()
+stop_time-start_time
+
+drag_max <- 100
+tstep_change <- 0.5
+
+    tests_mem <- embeddings_data$memory_df
+    test_nodes <- embeddings_data$node_embeddings
+    sum(abs(test_nodes$static_force))
+    tests_mem <- embeddings_data$memory_df %>%
+      filter(complete.cases(.))
+    test_edges <- embeddings_data$edge_embeddings
+    test_dyn <- embeddings_data$network_dynamics %>%
+      mutate(relative = static_force/first(static_force),
+             t_diff = t-lag(t)) 
+    
+        test_dyn2 <- embeddings_data2$network_dynamics %>%
+      mutate(relative = static_force/first(static_force),
+             t_diff = t-lag(t)) 
+    #test_dyn %>%
+        bind_rows(test_dyn %>% mutate(type = "shift"),
+                  test_dyn2 %>% mutate(type = "base")) %>%
+      mutate(relative = static_force/first(static_force)) %>%
+        #   filter(Iter>28000) %>%
+      ggplot(aes(x = Iter, y = log10(relative), colour = type)) + geom_line()
+    
+    
+      node_detail <- embeddings_data$edge_embeddings %>% tibble() %>%
+    separate(., col = edge_name, into = c("from","to"), sep = "-") %>%
+    select(from, to, tension) %>%
+    pivot_longer(cols = c(from, to), names_to = "node_type", values_to = "node") %>%
+    select(tension, node) %>%
+    group_by(node) %>%
+    summarise(sum_tension = sum(tension),
+              mean_tension = mean(tension),
+              median_tension = median(tension),
+              euc_tension = sqrt(sum(tension^2))) %>%
+    left_join(embeddings_data$node_embeddings %>% tibble(), by = "node") %>%
+    left_join(as_data_frame(g, what = "vertices"), by = c("node"="name"))
+
+test_edges <- as_data_frame(g, what = "edges")
+test_vertices <- as_data_frame(g, what = "vertices")
+
+node_ids <- test_g$vertices$name
+
+test_vertices[test_vertices$name != CurrArt,]
+
+test_edges[test_edges$from != CurrArt & test_edges$to != CurrArt,]
+
+which(get.vertex.attribute(g, "name") ==CurrArt)
+
+
+
+      HPC_test <- readRDS(
+        file.path("/home/jonno/setse_1_data/facebook_embeddings/processed_embeddings",
+                  "facebook_time_taken.rds" )) %>%
+        mutate(diff = (stop_time-start_time)/60) %>%
+        filter(file_name == "Texas80")
+      
+      HPC_test_auto <- readRDS(
+        file.path("/home/jonno/setse_1_data/facebook_embeddings/processed_embeddings_auto",
+                  "facebook_time_taken.rds" )) %>%
+        mutate(diff = (stop_time-start_time)/60)
+      
+      
+      HPC_nodes <- readRDS(
+  file.path("/home/jonno/setse_1_data/facebook_embeddings/processed_embeddings",
+            "facebook_node_embeddings.rds" )) %>%
+        group_by(file_name) %>%
+        summarise(stat_force = sum(abs(static_force))) %>%
+        left_join(     readRDS(
+  file.path("/home/jonno/setse_1_data/facebook_embeddings/processed_embeddings_auto",
+            "facebook_node_embeddings.rds" )) %>%
+        group_by(file_name) %>%
+        summarise(stat_force = sum(abs(static_force)))
+      , by = "file_name")
+
+      
+  
+      
+      test <- readRDS(
+  file.path("/home/jonno/setse_1_data/facebook_embeddings",
+            "facebook_node_embeddings.rds" )) %>%
+        group_by(file_name) %>%
+        summarise(static_force = sum(abs(static_force)))
+      
+      
+  HPC_dyn <- readRDS(
+  file.path("/home/jonno/setse_1_data/facebook_embeddings/processed_embeddings",
+            "facebook_network_dynamics.rds" )) %>%
+        filter(static_force !=0) %>%
+        group_by(file_name) %>%
+          mutate(max_stat = max(static_force)) %>%
+        group_by(file_name, component) %>%
+           mutate(max_stat_comp = max(static_force),
+                  relative = static_force/max(static_force)) %>%
+        ungroup %>%
+        filter(max_stat == max_stat_comp) %>%
+        left_join(uni_stats %>% select(file_name, nodes)
+ )     
+      
+      test2 <- HPC_dyn %>% 
+        group_by(file_name) %>% 
+        slice_tail(., n = 1) %>%
+        select(file_name, component)
+
+      
+  HPC_drag_vals <- readRDS(
+  file.path("/home/jonno/setse_1_data/facebook_embeddings",
+            "facebook_memory_df.rds" )) %>%
+  ungroup %>%
+  filter(!is.na(target_area)) %>%
+  group_by(file_name, component) %>%
+  slice_tail(., n = 1) %>%
+  left_join(uni_stats %>% select(file_name, nodes)) %>%
+    left_join(HPC_dyn %>% group_by(file_name) %>% slice_tail(n = 1) ) %>%
+    filter(!is.na(Iter))
+    
+
+ HPC_drag_vals %>%
+  semi_join(., test2) %>%
+  ggplot(aes(x = factor(tstep))) + geom_bar()
+
+HPC_drag_vals %>%
+  semi_join(., test2) %>%
+  ggplot(aes(x = common_drag_iter, y = log10(static_force), colour = log10(nodes))) + geom_point() + scale_color_viridis_c()
+                  
+      HPC_dyn  %>%
+        ggplot(aes(x = Iter, y = log10(relative), group = file_name, color = log10(nodes))) + geom_line() +
+        scale_colour_viridis_c()
+
+process_test <- readRDS(
+  file.path("/home/jonno/setse_1_data/facebook_embeddings/processed_embeddings",
+            "facebook_time_taken_process.rds" )) %>%
+  mutate(bicomp_minutes = (stop_time-start_time)/60) %>%
+  select(file_name, bicomp_minutes) %>%
+  left_join(readRDS(
+  file.path("/home/jonno/setse_1_data/facebook_embeddings/processed_embeddings_auto",
+            "facebook_time_taken_process.rds" )) %>%
+  mutate(auto_minutes = (stop_time-start_time)/60) %>%
+  select(file_name, auto_minutes) ) %>%
+  mutate(diff = auto_minutes-bicomp_minutes) %>%
+  left_join(uni_stats)
+
+```
+
+
 
 ##100 tension elevation
 This plots the tension and elevation for all the uni's in the facebook
 ```{r}
-
 
 
   node_details_df <- readRDS(
@@ -504,7 +898,7 @@ This plots the tension and elevation for all the uni's in the facebook
                                        "facebook_node_detail.rds" )) %>%
     mutate(abs_elevation = abs(elevation)) %>%
     group_by(file_name) %>%
-    summarise_at(., vars(sum_tension:elevation , abs_elevation), mean) %>%
+    summarise_at(., vars(sum_tension:elevation , abs_elevation), mean, na.rm = T) %>%
     left_join(uni_stats, by = "file_name") %>%
   mutate(node_edge = nodes/edges)
   
@@ -520,6 +914,7 @@ test <- cor(node_details_df %>% select( contains("assort")))# %>% as_tibble()
 
 #highlighting auburb main and michigen is a good idea to show how the assortativity of similar uni's is very separate
 relate_figure <-  node_details_df %>%
+  filter(mean_tension<1000) %>%
     ggplot(aes(y = abs_elevation, x = mean_tension, colour = year_assort, text = file_name)) + geom_point() + 
     scale_color_viridis_c() +
     labs(title = "The average elevation and tension embeddings of the facebook 100 dataset.",
@@ -576,6 +971,7 @@ This chunk shows that the iteration time complexity and the network memory deman
 
 fb_network_dynamics <- readRDS(file.path("/home/jonno/setse_1_data/facebook_embeddings/processed_embeddings", "facebook_network_dynamics.rds" ))
 
+fb_network_dynamics_auto <- readRDS(file.path("/home/jonno/setse_1_data/facebook_embeddings/processed_embeddings", "facebook_network_dynamics.rds" ))
 
 #This is interesting but not very useful
   # fb_network_dynamics %>%
@@ -586,6 +982,23 @@ fb_network_dynamics <- readRDS(file.path("/home/jonno/setse_1_data/facebook_embe
 #the time taken for an iteration is linear with the product of edges and nodes
 
   time_taken_df <- readRDS(file.path("/home/jonno/setse_1_data/facebook_embeddings/processed_embeddings", "facebook_time_taken.rds" )) %>%
+    mutate(time_taken = as.numeric(time_diff)) %>%
+    left_join(., 
+              fb_network_dynamics %>%
+  bind_rows() %>%
+    group_by(file_name) %>%
+    summarise_all(last)
+  ) %>%
+    filter(nodes>=100) %>%
+    mutate(time_per_iter = time_taken/Iter,
+           node_x_edge = nodes*edges,
+           node_x_edge2 = sqrt(nodes*edges),
+           log_node_x_edge = log(node_x_edge),
+           log_time_per_iter = log(time_per_iter),
+           log_time_taken = log(time_taken),
+           log_edges = log(edges))
+  
+time_taken_df_auto <- readRDS(file.path("/home/jonno/setse_1_data/facebook_embeddings/processed_embeddings_auto", "facebook_time_taken.rds" )) %>%
     mutate(time_taken = as.numeric(time_diff)) %>%
     left_join(., 
               fb_network_dynamics %>%
@@ -645,11 +1058,12 @@ summary(time_taken_mod)
 summary(time_taken_mod2)
 
 
+#bind_rows(time_taken_df %>% mutate(type2 = "bicomp"), time_taken_df_auto %>% mutate(type2 = "auto")) %>%
 time_taken_df %>%
-  select(edges, time_taken, time_per_iter) %>%
+  select(file_name, edges, time_taken, time_per_iter) %>%
   pivot_longer(., cols = time_taken:time_per_iter, names_to = "type") %>%
   mutate(type = str_replace_all(type, "_", " ")) %>%
-  ggplot(aes(x = edges, y = value)) + geom_point() +
+  ggplot(aes(x = edges, y = value)) + geom_point() + scale_color_viridis_c()+ 
   facet_wrap(~type, scales = "free_y") +
   labs(title = "Time complexity of SETSe on iteration and covnergence of Facebook 100 data",
        x = "number of edges",
@@ -662,9 +1076,9 @@ tibble(lambda = box_cox_data$x, log_likelihood = box_cox_data$y) %>%
   arrange(-log_likelihood)
 
 
-file_paths <- list.files("/home/jonno/setse_1_data/facebook_embeddings/memory", full.names = T)
+file_paths <- list.files("/home/jonno/setse_1_data/facebook_embeddings/facebookbicomp", pattern = "facebook.e", full.names = T)
 
-test <- 1:length(file_paths) %>% map_df(~{
+memory_df <- 1:length(file_paths) %>% map_df(~{
   
 
  file_number_to_open <-grep(paste0("\\.", .x, "$"), file_paths)
@@ -674,14 +1088,33 @@ test <- 1:length(file_paths) %>% map_df(~{
  print_data <- read_lines(file_name)
 
 tibble( Mbytes = print_data[grep("Maximum resident set size", print_data)] %>% str_extract(., "[0-9]+") %>% as.numeric()/1000, 
-       file_id = basename(file_name) %>% str_remove(., "facebook.e3692260.") %>% as.numeric())
+       file_id = basename(file_name) %>% str_remove(., "facebook.e4053572.") %>% as.numeric())
 
 }) 
 
-test <- test %>% bind_cols(., uni_stats %>% arrange(nodes) %>% slice(1:nrow(test)))
+memory_df <- memory_df %>% bind_cols(., uni_stats %>% arrange(nodes) %>% slice(1:nrow(memory_df)))
 
-test %>%
-ggplot(aes(x = edges, y =Mbytes)) + geom_point()+
+
+file_paths <- list.files("/home/jonno/setse_1_data/facebook_embeddings/facebookauto", pattern = "facebookauto.e", full.names = T)
+
+memory_df_auto <- 1:length(file_paths) %>% map_df(~{
+  
+
+ file_number_to_open <-grep(paste0("\\.", .x, "$"), file_paths)
+
+ file_name <- file_paths[file_number_to_open]
+
+ print_data <- read_lines(file_name)
+
+tibble( Mbytes = print_data[grep("Maximum resident set size", print_data)] %>% str_extract(., "[0-9]+") %>% as.numeric()/1000, 
+       file_id = basename(file_name) %>% str_remove(., "facebookauto.e4053573.") %>% as.numeric())
+
+}) 
+
+memory_df_auto <- memory_df_auto %>% bind_cols(., uni_stats %>% arrange(nodes) %>% slice(1:nrow(memory_df_auto)))
+
+bind_rows(memory_df %>% mutate(type = "bicomp"), memory_df_auto %>% mutate(type = "auto")) %>%
+ggplot(aes(x = edges, y =Mbytes, colour = type)) + geom_point()+
   labs(title = "Memory requirements vs number of edges.",
       subtitle = "Memory requirements are broadly linear, although there is some heteroscedasticity")
 
@@ -740,12 +1173,11 @@ This chunk allow the plotting of individual uni's
 
 ```{r}
 #penn test 
-penn_test <-  readRDS(file.path("/home/jonno/setse_1_data/facebook_embeddings/HPC_embeddings","Penn94.rds"))
+penn_test <-  readRDS(file.path("/home/jonno/setse_1_data/facebook_embeddings/facebook","Penn94.rds"))
  penn_test$embeddings_data$network_dynamics %>%
   bind_rows() %>%
    # left_join(uni_stats, by = c("file_name")) %>%
   ggplot(aes(x = Iter, y = log10(static_force))) + geom_point()
-
  
  penn_test$node_detail %>%
    filter((year %%1)==0#,
@@ -757,8 +1189,6 @@ penn_test <-  readRDS(file.path("/home/jonno/setse_1_data/facebook_embeddings/HP
    ggplot(aes(x = (mean_tension), y = elevation, color = factor(student_faculty))) + geom_point()+
    labs(title = "SETSe embeddings Penn State",
         color = "Year of enrollment")
- +
-   facet_wrap(~factor(year))
  
 ranger_df %>%
    ggplot(aes( x = (mean_tension2))) + geom_density()
@@ -839,13 +1269,13 @@ tibble(truth = train$target,
 target_unis <-   c("Auburn71", "Mich67",  "Maine59", "BC17")
 comparison_df<-    target_unis %>%
     map_df(~{
-      readRDS(file.path("/home/jonno/setse_1_data/facebook_embeddings/HPC_embeddings",
+      readRDS(file.path("/home/jonno/setse_1_data/facebook_embeddings/facebook",
                            paste0(.x, ".rds")))$node_detail
            })
   
 dat_text <- node_details_df %>%
   filter(file_name %in% target_unis) %>%
-  select(uni = file_name, year_assort, mean_tension, euc_tension, abs_elevation) %>%
+  select(uni = file_name, year_assort, mean_tension, euc_tension, abs_elevation, ) %>%
   mutate_at(., vars(-uni), signif, 2) %>%
   mutate(text_message = paste0("assort=", year_assort, " abs elevation=", abs_elevation, " tension=", mean_tension ))
 
@@ -860,7 +1290,7 @@ comparison_df %>%
          log(mean_tension)>-2.5
   ) %>%
   ggplot(aes(x = log(median_tension), y = elevation)) + 
-  geom_point(aes(colour = factor(year)), alpha = 0.4) +
+  geom_point(aes(colour = factor(year)), alpha = 1) +
   facet_wrap(~uni) + 
   geom_text(
     data    = dat_text,
@@ -868,7 +1298,7 @@ comparison_df %>%
     hjust   = -0.1,
     vjust   = -1
   ) +
-  labs(title = "Node level facebook embeddings of selected universities",
+  labs(title = "Node level Facebook embeddings of selected universities",
        x = "log mean tension",
        color = "Year")
 ggsave(file.path(FiguresFolder,  "node_level_embeddings_of_universities.pdf"))   
@@ -937,7 +1367,7 @@ for 2005 SETSe outperforms graph neighbour voting for all values of k, for balan
  fb_metrics <- metric_set(accuracy, kap, bal_accuracy, f_meas)
 source(file = file.path(SubcodeFolder, "compare_setse_with_graph.R"))
 
-class_perf <- list.files(file.path(PLwd, "facebook_classifier_student"), full.names = TRUE) %>%
+class_perf <- list.files(file.path(PLwd, "facebook_classifier"), full.names = TRUE) %>%
   map_df(readRDS) %>%
   mutate(estimate	= ifelse(is.na(estimate	), 1, estimate),
          network_knn = ifelse(is.na(network_knn), 1, network_knn)) %>%
@@ -965,7 +1395,7 @@ test %>%
   ggplot(aes(x = k, y = better, colour = metric)) + geom_line() +
   labs(title = "Predicting student type from year embeddings relative to graph neighbour voting",
        x = "number of nearest neighbours in SETSe space k",
-       y ="Fraction of times SETSe beats graph neighbour voting")
+       y ="fraction of times SETSe beats graph neighbour voting")
 ggsave(file.path(FiguresFolder,  "facebook_knn_vs_graph_vote.pdf"))   
 
 
@@ -1027,7 +1457,7 @@ test <- class_perf %>%
   filter(metric =="f_meas") 
 
 
-bind_rows(
+test <- bind_rows(
   class_perf_year %>%
   group_by(metric, k) %>%
   summarise(estimate = mean(estimate)) %>%
@@ -1036,8 +1466,9 @@ class_perf %>%
   filter(active_period==2005) %>%
   group_by(metric, k) %>%
   summarise(estimate = mean(estimate)) %>% mutate(type = "type")
-) %>%
-mutate(type = factor(type, levels = c("year", "type"))) %>%
+) %>% mutate(type = factor(type, levels = c("year", "type")))
+
+test%>%
   ggplot(aes(x = k, y = estimate, 
              #group = file_name,
              color = metric)) + geom_line() +
@@ -2371,4 +2802,3 @@ chem <- read_csv("/home/jonno/Downloads/BradleyMeltingPointDatasetClean.csv")
 This package might be able to read smiles strings into R.
 I don't know how they would then be conveted to igraph objects though
 https://bioconductor.org/packages/devel/bioc/vignettes/ChemmineR/inst/doc/ChemmineR.html
-

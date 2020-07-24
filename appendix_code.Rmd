@@ -13,6 +13,7 @@ editor_options:
 appendix_figures <- file.path(LatexFolder, "Figures_appendix")
 ```
 
+#auto_setse
 
 ```{r}
 
@@ -281,17 +282,21 @@ test3 <- caltech_auto3$memory_df
 ```{r}
 start_time <- Sys.time()
 auto_test <-  auto_SETSe(g, 
-                           tstep = 0.01,
-                           mass = 1,#sum(abs(vertex_attr(g, "force"))/2)/vcount(g), variable mass is useful when force is constant
-                           tol = sum(abs(vertex_attr(g, "force")))/1000,
-                           max = 3e4,
-                           step_size = 1,
-                           hyper_max = max(diameter(g)^2*100, 1000),
-                           verbose = TRUE, 
-                           sparse = TRUE, 
-                           sample = 100,
-                           hyper_tol = 0.1,
-                           static_limit = sum(abs(vertex_attr(g, "force"))))
+                                tstep = 0.1,
+                                mass = mass_adjuster(g),
+                                tol = sum(abs(vertex_attr(g, "force")))/1000,
+                                verbose = TRUE,
+                                sparse = TRUE, 
+                                sample = 100,
+                                static_limit = NULL, #if static_force is more than the starting force stop process.
+                                hyper_tol = 0.1,
+                                hyper_iters = 50,
+                                max_iter = 60000,
+                                hyper_max = 2000,
+                                tstep_change = 0.5,
+                                drag_min = 0.1,
+                                drag_max = 100,
+                                noisey_termination = TRUE) 
 stop_time <- Sys.time()
 stop_time-start_time
 
@@ -315,11 +320,22 @@ test %>%
 
 
 start_time <- Sys.time()
-caltech_bicomp <- SETSe_bicomp(g,
-                               tol = sum(abs(vertex_attr(g, "force")))/1000,
-                               hyper_tol = 0.1,
-                               hyper_iters = 3000,
-                               verbose = T)
+caltech_bicomp <- SETSe_bicomp(g, 
+                                tstep = 0.1,
+                                mass = mass_adjuster(g),
+                                tol = sum(abs(vertex_attr(g, "force")))/1000,
+                                verbose = TRUE,
+                                sparse = TRUE, 
+                                sample = 100,
+                                static_limit = NULL, #if static_force is more than the starting force stop process.
+                                hyper_tol = 0.1,
+                                hyper_iters = 50,
+                                max_iter = 60000,
+                                hyper_max = 2000,
+                                tstep_change = 0.5,
+                                drag_min = 0.1,
+                                drag_max = 100,
+                                noisey_termination = TRUE) 
 stop_time <- Sys.time()
 
 stop_time-start_time
@@ -342,15 +358,19 @@ bicomp_agg <- caltech_bicomp$node_embeddings %>%
 degree = degree(g)))
 
 
+test <- bicomp_agg %>%
+  filter(degree == 2)
+
 class(bicomp_agg$node)
 
-auto_agg %>%
+test <- auto_agg %>%
  # filter(node_perc>0.95) %>%
   group_by(degree) %>%
   summarise(counts = n(),
             total = sum(abs(static_force)),
             is_artic = sum(is_artic)) %>%
-  mutate(perc = counts/sum(counts))
+  mutate(perc = counts/sum(counts),
+         stat_perc = total/sum(total))
 
 
 bicomp_agg %>%
@@ -358,7 +378,8 @@ bicomp_agg %>%
   group_by(degree) %>%
   summarise(counts = n(),
             total = sum(abs(static_force))) %>%
-  mutate(perc = counts/sum(counts))
+  mutate(perc = counts/sum(counts),
+         stat_perc = total/sum(total))
 
 bicomp_agg %>%
   ggplot(aes(x = node_perc, y = static_perc)) + geom_line()
@@ -373,17 +394,49 @@ sum(abs(bicomp_agg$static_force))
 
 ```
 
+
+#timings
 ```{r}
 
 process_facebook_embeddings(file.path(PLwd, "facebook_embeddings", "facebookauto"), 
                             file.path(PLwd, "facebook_embeddings", "processed_embeddings_auto"))
 
 
+
+node_details_auto <- readRDS(file.path("/home/jonno/setse_1_data/facebook_embeddings/processed_embeddings_auto", 
+                                   "facebook_node_detail.rds" ))  %>%
+  group_by(file_name) %>%
+  summarise(auto = sum(abs(static_force))) %>%
+  left_join(readRDS(file.path("/home/jonno/setse_1_data/facebook_embeddings/processed_embeddings", 
+                                   "facebook_node_detail.rds" ))  %>%
+  group_by(file_name) %>%
+  summarise(bicomp = sum(abs(static_force))))  %>%
+  mutate(diff = bicomp-auto,
+         relative = diff/auto
+         ) 
+
+
+node_details_auto %>%
+  filter(relative>-0.25) %>%
+  ggplot(aes(x = relative)) + geom_density()
+
+node_details_auto %>%
+  filter(relative>-0.25) %>%
+  summarise(mean = mean(relative))
+
 fb_time_taken <- readRDS(file.path("/home/jonno/setse_1_data/facebook_embeddings/processed_embeddings", 
                                    "facebook_time_taken_process.rds" )) %>%
   mutate(time = as.numeric(stop_time - start_time))
 
 
+fb_time_taken_conv <- readRDS(file.path("/home/jonno/setse_1_data/facebook_embeddings/processed_embeddings", 
+                                   "facebook_time_taken.rds" )) %>%
+  group_by(file_name) %>%
+  summarise(convegence_time_bicomp = sum(time_diff, na.rm = T) )
+
+fb_time_taken_conv_auto <- readRDS(file.path("/home/jonno/setse_1_data/facebook_embeddings/processed_embeddings_auto", "facebook_time_taken.rds" )) %>%
+  group_by(file_name) %>%
+  summarise(convegence_time_auto = sum(time_diff, na.rm = T) )
 
 fb_time_taken_auto <- readRDS(file.path("/home/jonno/setse_1_data/facebook_embeddings/processed_embeddings_auto", "facebook_time_taken_process.rds" ))  %>%
   mutate(time = as.numeric(stop_time - start_time))
@@ -392,32 +445,37 @@ relative_time <- fb_time_taken %>%
   select(file_name, time_bicomp = time) %>%
   left_join(fb_time_taken_auto %>%
   select(file_name, time_auto = time), by = "file_name") %>%
+  left_join(fb_time_taken_conv) %>%
+  left_join(fb_time_taken_conv_auto) %>%
   mutate(
-    time_diff = time_auto-time_bicomp,
+    process_diff = time_auto-time_bicomp,
+    overhead = time_bicomp - convegence_time_bicomp,
+    conv_diff = convegence_time_auto-convegence_time_bicomp,
     time_fract = (time_bicomp- time_auto)/time_auto,
          time_fract2 = time_bicomp/time_auto) %>%
-  left_join(uni_stats %>% select(file_name, nodes, edges))
+  left_join(uni_stats %>% select(file_name, nodes, edges)) 
 
 
 relative_time %>%
 #  mutate(time_diff = ifelse(is.na(time_diff), (10*3600)-time_bicomp, time_diff),
  #        time_fract2 = ifelse(is.na(time_fract2), time_bicomp/(10*3600), time_fract2)) %>%
-ggplot(aes(x = time_diff/3600, y = time_fract2, color = log10(edges))) + geom_point()+
+ggplot(aes(x = process_diff/3600, y = time_fract2, color = log10(edges))) + geom_point()+
   scale_color_viridis_c()+
   labs(title ="Time analysis of bi-connected SETSe vs auto-SETSe",
-       x = "Difference in hours between auto-SETSe and biconnected SETSe",
-       y ="time ratio of bi-connected to auto-SETSe")
+       x = "The time difference of auto-SETSe minus biconnected SETSe in hours",
+       y ="bi-connected SETSe divided by auto-SETSe",
+       colour = "log 10 edges")
 
 ggsave(file.path(appendix_figures, "bicomp_vs_auto.pdf"))
 
 relative_time %>%
   mutate(
     time_auto = ifelse(is.na(time_auto), (10*3600), time_auto),
-    time_diff = ifelse(is.na(time_diff), (10*3600)-time_bicomp, time_diff),
+    process_diff = ifelse(is.na(process_diff), (10*3600)-time_bicomp, process_diff),
          time_fract2 = ifelse(is.na(time_fract2), time_bicomp/(10*3600), time_fract2)) %>%
   summarise(time_auto = (sum(time_bicomp)-sum(time_auto))/sum(time_auto),
-            fract_better = sum(time_diff>0)/98,
-            time_diff = sum(time_diff)/3600,
+            fract_better = sum(process_diff>0)/98,
+            process_diff = sum(process_diff)/3600,
             time_fract2 = mean(time_fract2))
 
 
@@ -432,5 +490,49 @@ test <- relative_time %>%
 
 cor(test$time_diff, test$total, use = "complete.obs")
 
+```
+
+
+#convergence dynamics
+```{r}
+  HPC_dyn <- readRDS(
+  file.path("/home/jonno/setse_1_data/facebook_embeddings/processed_embeddings_auto",
+            "facebook_network_dynamics.rds" )) %>%
+        filter(static_force !=0) %>%
+        group_by(file_name) %>%
+          mutate(max_stat = max(static_force)) %>%
+        group_by(file_name) %>%
+           mutate(max_stat_comp = max(static_force),
+                  relative = static_force/max(static_force)) %>%
+        ungroup %>%
+        filter(max_stat == max_stat_comp) %>%
+        left_join(uni_stats %>% select(file_name, nodes)
+ )     
+
+  HPC_drag_vals <- readRDS(
+  file.path("/home/jonno/setse_1_data/facebook_embeddings/processed_embeddings_auto",
+            "facebook_memory_df.rds" )) %>%
+  ungroup %>%
+  filter(!is.na(target_area)) %>%
+  group_by(file_name) %>%
+  slice_tail(., n = 1) %>%
+  left_join(uni_stats %>% select(file_name, nodes)) %>%
+    left_join(HPC_dyn %>% group_by(file_name) %>% slice_tail(n = 1) ) %>%
+    filter(!is.na(Iter))
+
+  
+        
+
+  
+  HPC_drag_vals %>%
+    ggplot(aes(x = factor(tstep))) + geom_bar()
+  
+  HPC_drag_vals %>%
+    ggplot(aes(x = common_drag_iter, y = log10(static_force), colour = log10(nodes))) + geom_point() + scale_color_viridis_c()
+  
+  HPC_dyn  %>%
+    ggplot(aes(x = Iter, y = log10(relative), group = file_name, color = log10(nodes))) + geom_line() +
+    scale_colour_viridis_c()
+  
 ```
 

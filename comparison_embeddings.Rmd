@@ -57,7 +57,7 @@ These are the embeddings created by the GEM library
 peels_metrics <- metric_set(accuracy, precision, recall, f_meas)
 
 
-embedded_files <- list.files(file.path(PLwd, "peel_benchmark_embeddings8"), full.names = T)
+embedded_files <- list.files(file.path(PLwd, "peel_benchmark_embeddings2"), full.names = T)
 
 include <-!grepl(embedded_files, pattern = "SDNE")
 GEM_embeds <- embedded_files[include] %>%
@@ -246,7 +246,7 @@ node_data_agg <-node_data2 %>%
 
 
 
-node2vec_embeds <- list.files(file.path(PLwd, "node2vec_embeddings8"), full.names = TRUE)
+node2vec_embeds <- list.files(file.path(PLwd, "node2vec_embeddings"), full.names = TRUE)
 
 node_perf <- node2vec_embeds %>%
   map_df(~{
@@ -358,8 +358,8 @@ bind_rows(GEM_embeds_agg, n2v_embeds_agg, node_data_agg) %>%
   geom_point() +
   facet_wrap(~embeddings_method) +
   labs(title = "Seperating Peel's Quintet in 2 dimensions",
-       x = "dimension 1 (Tension for SETSe)",
-       y = "dimension 2 (elevation for SETSe)")
+       x = "first dimension (tension for SETSe)",
+       y = "second dimension (elevation for SETSe)")
 ggsave(file.path(FiguresFolder, "Seperating_Peels_quintet.pdf"))
 
 ```
@@ -381,7 +381,7 @@ bind_rows(GEM_embeds,
   guides(fill=FALSE) +
   theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
   labs(title = "Comparison of graph embeddings methods for class identification on Peel's Quintet",
-       y = "Accuracy",
+       y = "accuracy",
        x = "")
 ggsave(file.path(FiguresFolder,  "peels_embedding_linear_sep.pdf"))        
 

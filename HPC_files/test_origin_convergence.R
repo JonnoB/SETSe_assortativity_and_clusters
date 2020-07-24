@@ -4,13 +4,14 @@
 # # 
 # # MYRIAD RUN SCRIPT
 # # 
-### This script creates the embeddings for the facebook 100 dataset. It uses 
+### This script embedds the origin component only for network UIllinois20. This is becuase I am having
+###Issues converging a few large networks, It appears there are sudden divergences which I don't
+###Understand at all. It also looks like smaller tiemsteps resolve the issue. Which does make sense.
+### But I don't know how you are supposed to know what timestep to set.
 # # 
 # # 
 ###########################
 ###########################
-
-
 
 packages <- c("rlang", "dplyr", "tidyr", "purrr", "tibble", "forcats", "magrittr",
               "igraph", "devtools", "minpack.lm", "readr", "stringr",
@@ -49,7 +50,7 @@ if(dir.exists("/home/jonno")){
   
   #If it is not on my computer then the variables need to be loaded from the system environment
   #Get the task ID
-  task_id <- Sys.getenv("SGE_TASK_ID")
+  task_id <- as.numeric(Sys.getenv("SGE_TASK_ID"))
 
   list.files(file.path(basewd, "Useful_PhD__R_Functions"), pattern = ".R", full.names = T) %>%
     walk(~source(.x))
@@ -61,51 +62,27 @@ if(dir.exists("/home/jonno")){
 
 
 
+params <- expand.grid(tstep = c(0.001, 0.005, 0.01), drag = c(0.1, 0.5, 1, 2, 4, 10))
 
 
-print("load uni stats dataframe")
-uni_stats <- readRDS(file.path(load_data_files_path, "facebook_uni_stats.rds"))
+print(paste0("Task id =",task_id, " system params: tstep=", params$tstep[task_id], ", drag=", params$drag[task_id]))
 
-#biggest smallest
-uni_name <- uni_stats %>%
- # dplyr::filter(file_name %in% c("UCSD34", "GWU54", "UC33", "Tennessee95"  )) %>%
-  dplyr::arrange(-nodes) %>%
-  dplyr::pull(file_name)
-
-uni_name <- uni_name[as.numeric(task_id)]
-
-print(paste("task id", task_id, uni_name))
-
-uni_file_path <-  list.files(facebook_graphs, pattern = uni_name, full.names = T)
-
-print(paste("load uni graph", uni_name, uni_file_path))
 file_name <- file.path(save_data_files_path,
-                       paste0(uni_name, ".rds"))
+                       paste0("Uillinois20_origin_task_id_",task_id, ".rds"))
 
   start_time <- Sys.time()
 
-  g <- readRDS(uni_file_path)  %>% #load file
-    remove_small_components()  %>%
-    facebook_year_clean() %>% prepare_SETSe_continuous(., node_names = "name", k = 1000, force_var = "year", 
-                                                       sum_to_one = FALSE, 
-                                                       distance = 100) 
+  g <- readRDS(file.path(load_data_files_path, "Uillinois20_origin.rds"))  
   
-  embeddings_data <- SETSe_bicomp(g, 
-                                  tstep = 0.1,
-                                  mass = NULL,
-                                  tol = sum(abs(vertex_attr(g, "force")))/1000,
-                                  verbose = TRUE,
-                                  sparse = TRUE, 
-                                  sample = 100,
-                                  static_limit = NULL, #if static_force is more than the starting force stop process.
-                                  hyper_tol = 0.1,
-                                  hyper_iters = 50,
-                                  max_iter = 60000,
-                                  hyper_max = 2000,
-                                  tstep_change = 0.5,
-                                  drag_min = 0.1,
-                                  drag_max = 100,
-                                  noisey_termination = TRUE) 
+  
+  embeddings_data <- SETSe(g = g,
+                           tstep = params$tstep[task_id],
+                           max_iter = 60000,
+                           coef_drag = params$drag[task_id],
+                           tol = sum(abs(vertex_attr(g, "force")))/1000,
+                           sparse = TRUE,
+                           sample = 100,
+                           static_limit = sum(abs(vertex_attr(g, "force"))))
   
   node_detail <- embeddings_data$edge_embeddings %>% tibble() %>%
     separate(., col = edge_name, into = c("from","to"), sep = "-") %>%
@@ -119,16 +96,12 @@ file_name <- file.path(save_data_files_path,
               euc_tension = sqrt(sum(tension^2))) %>%
     left_join(embeddings_data$node_embeddings %>% tibble(), by = "node") %>%
     left_join(as_data_frame(g, what = "vertices"), by = c("node"="name")) %>%
-    mutate(uni = uni_name)
+    mutate(tstep = params$tstep[task_id],
+           drag = params$drag[task_id])
   
   stop_time <- Sys.time()
-  time_diff <- tibble(uni  = uni_name, start_time = start_time, stop_time = stop_time)
-  
-  print(paste("Total process time",
-              round(as.numeric( difftime(stop_time, start_time, units = "mins")), 1),
-              "minutes. Final static force", signif(sum(abs(embeddings_data$node_embeddings$static_force)), 3),
-              "Value is ", round(sum(abs(embeddings_data$node_embeddings$static_force))/(sum(abs(vertex_attr(g, "force")))/1000),
-                                 2), "of target value." ,"Saving file"))
+  time_diff <- tibble(tstep = params$tstep[task_id],
+                      drag = params$drag[task_id], start_time = start_time, stop_time = stop_time)
   
   results <-list(embeddings_data = embeddings_data,
                  node_detail = node_detail,

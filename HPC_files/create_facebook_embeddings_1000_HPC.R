@@ -10,8 +10,6 @@
 ###########################
 ###########################
 
-
-
 packages <- c("rlang", "dplyr", "tidyr", "purrr", "tibble", "forcats", "magrittr",
               "igraph", "devtools", "minpack.lm", "readr", "stringr",
               "Matrix")
@@ -66,10 +64,8 @@ if(dir.exists("/home/jonno")){
 print("load uni stats dataframe")
 uni_stats <- readRDS(file.path(load_data_files_path, "facebook_uni_stats.rds"))
 
-#biggest smallest
 uni_name <- uni_stats %>%
- # dplyr::filter(file_name %in% c("UCSD34", "GWU54", "UC33", "Tennessee95"  )) %>%
-  dplyr::arrange(-nodes) %>%
+  dplyr::arrange(nodes) %>%
   dplyr::pull(file_name)
 
 uni_name <- uni_name[as.numeric(task_id)]
@@ -91,7 +87,7 @@ file_name <- file.path(save_data_files_path,
                                                        distance = 100) 
   
   embeddings_data <- SETSe_bicomp(g, 
-                                  tstep = 0.1,
+                                  tstep = 0.005,
                                   mass = NULL,
                                   tol = sum(abs(vertex_attr(g, "force")))/1000,
                                   verbose = TRUE,
@@ -101,11 +97,10 @@ file_name <- file.path(save_data_files_path,
                                   hyper_tol = 0.1,
                                   hyper_iters = 50,
                                   max_iter = 60000,
-                                  hyper_max = 2000,
+                                  hyper_max = 1000,
                                   tstep_change = 0.5,
-                                  drag_min = 0.1,
-                                  drag_max = 100,
-                                  noisey_termination = TRUE) 
+                                  drag_max = 100
+                                  ) 
   
   node_detail <- embeddings_data$edge_embeddings %>% tibble() %>%
     separate(., col = edge_name, into = c("from","to"), sep = "-") %>%
@@ -123,12 +118,6 @@ file_name <- file.path(save_data_files_path,
   
   stop_time <- Sys.time()
   time_diff <- tibble(uni  = uni_name, start_time = start_time, stop_time = stop_time)
-  
-  print(paste("Total process time",
-              round(as.numeric( difftime(stop_time, start_time, units = "mins")), 1),
-              "minutes. Final static force", signif(sum(abs(embeddings_data$node_embeddings$static_force)), 3),
-              "Value is ", round(sum(abs(embeddings_data$node_embeddings$static_force))/(sum(abs(vertex_attr(g, "force")))/1000),
-                                 2), "of target value." ,"Saving file"))
   
   results <-list(embeddings_data = embeddings_data,
                  node_detail = node_detail,

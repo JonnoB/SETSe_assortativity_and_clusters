@@ -84,7 +84,7 @@ file_name <- file.path(save_data_files_path,
                        paste0(uni_name, ".rds"))
 
   start_time <- Sys.time()
-
+  
   g <- readRDS(uni_file_path)  %>% #load file
     remove_small_components()  %>%
     facebook_year_clean() %>% 
@@ -93,16 +93,21 @@ file_name <- file.path(save_data_files_path,
                                                        distance = 100) 
   
   embeddings_data <- auto_SETSe(g, 
-                                tstep = 0.01,
-                                mass = 1,#sum(abs(vertex_attr(g, "force"))/2)/vcount(g), variable mass is useful when force is constant
+                                tstep = 0.1,
+                                mass = mass_adjuster(g),
                                 tol = sum(abs(vertex_attr(g, "force")))/1000,
-                                verbose = FALSE,
+                                verbose = TRUE,
                                 sparse = TRUE, 
-                                sample = 200,
-                                static_limit = sum(abs(vertex_attr(g, "force"))), #static_force is more than the starting force. just stop.
+                                sample = 100,
+                                static_limit = NULL, #if static_force is more than the starting force stop process.
                                 hyper_tol = 0.1,
+                                hyper_iters = 50,
                                 max_iter = 60000,
-                                hyper_max = 6000) 
+                                hyper_max = 2000,
+                                tstep_change = 0.5,
+                                drag_min = 0.1,
+                                drag_max = 100,
+                                noisey_termination = TRUE) 
   
   node_detail <- embeddings_data$edge_embeddings %>% tibble() %>%
     separate(., col = edge_name, into = c("from","to"), sep = "-") %>%

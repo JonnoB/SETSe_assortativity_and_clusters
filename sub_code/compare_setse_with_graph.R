@@ -1,6 +1,6 @@
 
 #create the combinations too test
-combos <-expand_grid(file_name = str_remove(list.files("/home/jonno/setse_1_data/facebook_embeddings/HPC_embeddings"), 
+combos <-expand_grid(file_name = str_remove(list.files(file.path(PLwd, "facebook_embeddings/facebook"), pattern = ".rds"), 
                                             pattern = ".rds"))
 
 if(!dir.exists(file.path(PLwd, "facebook_classifier"))){
@@ -25,7 +25,7 @@ if(!dir.exists(file.path(PLwd, "facebook_classifier"))){
           active_period <-2005 #list(2004L, 2005L, 2004:2005)[[.x]]
           
         print(paste("file number", file_number  ,"file", file_name, "active_period", paste(active_period, collapse = ", ")))
-        embeddings_data <- readRDS(file.path(PLwd, "facebook_embeddings/HPC_embeddings",paste0(file_name, ".rds")))
+        embeddings_data <- readRDS(file.path(PLwd, "facebook_embeddings/facebook",paste0(file_name, ".rds")))
         
         #All data from the network prepped for prediction
         data_node_details <- embeddings_data$node_detail %>% 
@@ -90,8 +90,8 @@ if(!dir.exists(file.path(PLwd, "facebook_classifier"))){
         
         #test <- left_join(data_node_details %>% select(from = "node", target),voted_preds)
         
-        network_knn <- fb_metrics(voted_preds, truth = factor(truth, levels = 1:2), 
-                                  estimate = factor(preds, levels = 1:2)) %>%
+        network_knn <- fb_metrics(voted_preds, truth = factor(truth, levels = 2:1), 
+                                  estimate = factor(preds, levels = 2:1)) %>%
           rename(metric = .metric,
                  network_knn = .estimate) %>%
           select(-.estimator) %>%
@@ -120,8 +120,8 @@ if(!dir.exists(file.path(PLwd, "facebook_classifier"))){
                                cl = fct_drop(data_node_details_mod$target), 
                                k = .x)
           
-          tibble(truth = fct_drop(data_node_details_mod$target) %>% factor(., levels = 1:2),
-                 estimate = mod %>% factor(., levels = 1:2)) %>%
+          tibble(truth = fct_drop(data_node_details_mod$target) %>% factor(., levels = 2:1),
+                 estimate = mod %>% factor(., levels = 2:1)) %>%
             fb_metrics(truth = truth, estimate = estimate) %>%
             mutate(k = .x)
           
