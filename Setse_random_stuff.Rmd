@@ -1,0 +1,665 @@
+---
+title: "general setse madness"
+author: "Jonathan Bourne"
+date: "24/07/2020"
+output: html_document
+---
+
+#Set up
+```{r Setup}
+
+packages <- c("tidyverse", "igraph","readr","readxl", "broom", "stringr", "xtable", "rlang", "latex2exp", "yardstick", "minpack.lm", "ggraph", "patchwork", "rsample", "VGAM", "class", "mclust", "R.matlab", "ranger")
+
+new.packages <- packages[!(packages %in% installed.packages()[,"Package"])]
+if(length(new.packages)) install.packages(new.packages)
+
+select <- dplyr::select
+arrange <- dplyr::arrange
+map <- purrr::map
+sapply(packages, library, character.only = TRUE)
+
+library(rSETSe)
+
+#Set up file system to read the correct folders this switches between aws and windows mode
+
+#basewd <- "/home/jonno/Dropbox/Jonathan_Bourne_Phd_Folder"
+LatexFolder <- "/home/jonno/Dropbox/Apps/ShareLaTeX/Sets Paper 1" 
+FiguresFolder <- file.path(LatexFolder, "Figures")
+TablesFolder <- file.path(LatexFolder, "Tables")
+MatricesFolder <- file.path(LatexFolder, "Matrices")
+PLwd <- "/home/jonno/setse_1_data"
+CodeFolder <- "/home/jonno/SETSe_assortativity_and_clusters"
+SubcodeFolder <- file.path(CodeFolder, "sub_code")
+
+#Load some other useful functions
+list.files("/home/jonno/Useful_PhD__R_Functions", pattern = ".R", full.names = T) %>%
+  walk(~source(.x))
+
+
+```
+
+
+
+
+
+#MNIST
+
+This has a quick look at MNIST and sees what happens when you try and embed it using SETSe
+
+
+Produces a load of rubbish. mighg be better with proper high dim embeddings. But probably not
+
+```{r}
+
+MNIST_df <- read_csv(file.path(PLwd, "MNIST", "mnist_train.csv"), col_names = FALSE)
+
+1:6e4 %>% walk(~{
+  
+      #select single mnist
+    mnist_nodes <- MNIST_df %>% slice(.x) %>%
+      pivot_longer(cols = -X1) %>%
+      mutate(
+        index_val = 1:n(),
+        rows = rep(1:28, times = 784/28 ),
+        cols = rep(28:1, each = 784/28 ))
+  
+  file_path <- file.path(PLwd, "MNIST", "MNIST_embeddings",
+                         paste0("number_", min(mnist_nodes$X1), "_id_", .x, ".rds"))
+  
+  if(file.exists(file_path)){print(paste("MNIST", .x, "completed, proceeding to next"))
+    } else{
+    
+
+    
+    
+    #convert into a graph values totalling to 2000
+    g_lattice <- make_lattice(c(28,28)) %>%
+      set_vertex_attr(., "names", value = 1:784) %>%
+      set_vertex_attr(., "value", value = mnist_nodes %>% pull(value)) %>%
+      prepare_SETSe_continuous(., node_names = "names", 
+                               k = 1000,
+                               force_var = "value",
+                               distance = 100,
+                               sum_to_one = TRUE) %>%
+      set_vertex_attr(., "force", value = vertex_attr(., "force")*1000)
+    
+    out <- auto_SETSe(g_lattice, force = "force", verbose = T,
+                      mass = 2000/784,
+                      tol = sum(abs(vertex_attr(g_lattice, "force")))/1000,
+                      sparse = TRUE)
+    
+    out$node_details <- out$edge_embeddings %>% tibble() %>%
+      separate(., col = edge_name, into = c("from","to"), sep = "-") %>%
+      select(from, to, tension) %>%
+      pivot_longer(cols = c(from, to), names_to = "node_type", values_to = "node") %>%
+      select(tension, node) %>%
+      group_by(node) %>%
+      summarise(sum_tension = sum(tension),
+                mean_tension = mean(tension),
+                median_tension = median(tension),
+                euc_tension = sqrt(sum(tension^2))) %>%
+      left_join(out$node_embeddings %>% tibble(), by = "node") %>%
+      left_join(as_data_frame(g_lattice, what = "vertices"), by = c("node"="name"))
+    
+    saveRDS(out, file_path)
+    print(paste("MNIST", .x, "completed, proceeding to next"))
+  }
+  
+})
+
+test <- list.files(file.path(PLwd, "MNIST", "MNIST_embeddings"), full.names = T) %>%
+  map_df(~{
+    
+    file_path <- .x
+    
+    details <- basename(file_path) %>% str_remove(., ".rds") %>% str_split(., "_", simplify = T)
+    
+    readRDS(.x)$node_details %>%
+      summarise(mean_tension = mean(mean_tension),
+                median_tension = mean(median_tension),
+                euc_tension = mean(euc_tension),
+                mean_elevation = mean(abs(elevation))) %>%
+      mutate(number = details[2],
+             id = details[4])
+    
+  })
+
+
+test %>%
+  ggplot(aes(x = euc_tension, y = mean_elevation, colour = factor(number))) + geom_point() +
+  scale_color_brewer(palette ="Paired")
+
+test <- as_data_frame(g_lattice, what = "vertices")
+
+#The mnist edge list is calulcated by adding 1 to the index and the row, subtracting 1 from the index and the row, adding 28 to the index and 1 to the columns subtracting 28 from the index and the column. this will produce a large number of invalid cells. These cells can be removed by doing the following
+#if the new row or columns doesn't exists remove it.
+
+edge_list_base <- mnist_nodes %>%
+  select(index_val:cols)
+
+link_above <- edge_list_base %>%
+  mutate(index_val = index_val-1,
+         rows = rows-1)
+
+link_below <- edge_list_base %>%
+  mutate(index_val = index_val+1,
+         rows = rows+1)
+
+link_right <- edge_list_base %>%
+  mutate(index_val = index_val+28,
+         cols = cols+1)
+
+link_left <- edge_list_base %>%
+  mutate(index_val = index_val-28,
+         cols = cols-1)
+
+
+test <-bind_rows(link_above, link_below, link_left, link_right) %>%
+  filter(index_val %in% 1:784,
+         rows %in% 1:28,
+         cols %in% 1:28)
+
+
+#edges in lattice 
+27^2*4 + 26*4*2
+
+mnist_example %>%
+pull(value) %>%
+  matrix(data =., nrow = 28, byrow = T) %>%
+  graph_from_adjacency_matrix(., mode = "undirected", weighted = TRUE)
+
+
+mnist_example %>%
+  ggplot(aes(y = cols, x = rows, fill = value)) +geom_raster()
+
+
+```
+
+
+
+#Dynamic clustering
+
+Dynamic clustering finds the most tense edge and removes it iterateivly until the required number of group are identified
+
+It is not a fast method and is distinct from the elevation method
+
+```{r}
+
+```
+
+
+#Dominance
+taken from http://moreno.ss.uci.edu/data.html#bison
+
+wolves are deference in the row not dominance
+
+```{r}
+files <- list.files("/home/jonno/setse_1_data/conflict_networks", full.names = T)
+
+dominance_files <-list.files( "/home/jonno/setse_1_data/dominance_networks", full.names = T)
+
+
+dominance_files
+#plot graph
+file_id <- grepl("bison", dominance_files)
+
+g_dl <- load_dl_graph(dominance_files[file_id], directed = FALSE, return_graph = TRUE) 
+
+
+g_dl %>%
+  ggraph(.)+
+      geom_edge_fan(aes(colour = weights)) +
+      geom_node_point(aes(), size=3) +
+     scale_edge_colour_viridis()
+
+file_id <- grepl("bison", dominance_files)
+
+g_dl <- load_dl_graph(dominance_files[file_id], directed = FALSE, return_graph = TRUE) %>%
+  simplify
+
+g_mat <- load_dl_graph(dominance_files[file_id], directed = TRUE, return_graph = FALSE)
+
+bison_dominance <- domination_function(g_dl, g_mat)
+
+node_win_loss_df <- tibble(node = g_mat %>% pull(from), node_wins = g_mat %>% select(-from) %>% rowSums()) %>%
+      left_join(tibble(node = g_mat %>% select(-from) %>% names, node_losses = g_mat %>% select(-from) %>% colSums()),
+                by = "node") %>%
+      mutate(node_ratio = node_wins/(node_wins + node_losses))
+
+bison_performance <- dominance_performance(g_dl,g_mat, bison_dominance)  %>% #add in total conlicts per edge/node pair
+      left_join(node_win_loss_df %>% select(winner = node, winner_node_ratio = node_ratio), by = "winner" ) %>%
+      left_join(node_win_loss_df %>% select(loser = node, loser_node_ratio = node_ratio), by = "loser" ) %>%
+      mutate(relative_win_ratio = winner_node_ratio/loser_node_ratio,
+             naive_res = case_when(
+               relative_win_ratio>=1 & win_ratio>=0.5 ~"correct",
+               relative_win_ratio<=1 & win_ratio<=0.5 ~"correct",
+               TRUE ~"error"
+             ))
+
+bison_performance %>%
+  ggplot(aes(x = log10(winner_tension/loser_tension) , y = ratio_euc, colour = win_ratio>0.5)) + geom_point()
+
+table(bison_performance$class2)
+table(bison_performance$naive_res)
+
+g_dl <- load_dl_graph(dominance_files[2], directed = FALSE, return_graph = TRUE) %>%
+  simplify
+
+g_mat <- load_dl_graph(dominance_files[2], directed = TRUE, return_graph = FALSE)
+
+cattle_dominance <- domination_function(g_dl, g_mat)
+
+cattle_performance <- dominance_performance(g_mat, cattle_dominance)
+
+#pony
+g_dl <- load_dl_graph(dominance_files[3], directed = FALSE, return_graph = TRUE) %>%
+  simplify
+
+g_mat <- load_dl_graph(dominance_files[3], directed = TRUE, return_graph = FALSE)
+
+pony_dominance <- domination_function(g_dl, g_mat)
+
+pony_performance <- dominance_performance(g_mat, pony_dominance)
+
+
+pony_dominance %>%
+  ggplot(aes(x = factor(node), y = euc)) + geom_point()
+    
+
+graph_from_data_frame(as_data_frame(g_dl), directed = FALSE, vertices = bison_dominance$node) %>%
+  ggraph(.) +
+      geom_edge_fan() +
+      geom_node_point(aes( colour = rank1), size=3) +
+   scale_colour_viridis_c(direction = -1) 
+
+
+
+test <- dominance_xvalidation(dominance_files[1], folds = 2, seed = 10) 
+
+
+#Q if A is higher than B and A and B have conflict does A generally dominate?
+
+
+test <-random_removal %>%
+  filter(.metric =="bal_accuracy",
+         cutoff ==1) 
+
+random_removal 
+testtest %>%
+  filter(.metric =="bal_accuracy")  %>%
+  ggplot(aes(x = cutoff , y = .estimate)) + geom_point()+
+  facet_wrap(~seed) +
+  geom_vline(xintercept = 1)
+
+
+
+random_removal %>%
+  filter(.metric =="bal_accuracy",
+         cutoff>0.75,
+         cutoff<1.5) %>%
+  group_by(cutoff) %>%
+  summarise(.estimate = mean(.estimate)) %>%
+  ggplot(aes(x = factor(cutoff) , y = .estimate)) + geom_boxplot()
+
+pony_performance %>%
+  ggplot(aes(x = total, y =ratio_euc, colour = class)) + 
+  geom_point()
+
+
+#model accuracy is maximised when the ratio of 1 is used as the cutoff.
+#This is the bare minimum as they will literally pull in other directions so the accuracy should be high
+seq(0,2, by = 0.05) %>%
+  map_df(~{
+    pony_performance %>%
+      mutate( 
+        truth = factor(total>0.5, levels = c(TRUE, FALSE)),
+        estimate= factor(ratio_euc >= .x, levels = c(TRUE, FALSE))) %>%
+      metrics(., truth = truth, estimate = estimate) %>%
+      mutate(cutoff = .x)
+    
+  }) 
+
+
+test_res%>%
+  ggplot(aes(x = cutoff, y = .estimate))+ geom_point() +
+  facet_wrap(~.metric)
+
+#Q does heignt in matrix predict breeding success?
+
+
+fold_test <- dominance_xvalidation(dominance_files[1], folds = 2, seed = 10) 
+fold_test_perf <- fold_test$performance_df
+fold_test_cutoff <- fold_test$model_analysis %>%
+  filter(.metric == "accuracy") 
+
+
+#test_10 
+#test_2 <- fold_test_cutoff 
+
+test <- bind_rows(test_10 %>% mutate(fold = 10),
+          test_5 %>% mutate(fold = 5),
+            test_2 %>% mutate(fold = 2)) %>%
+  group_by(type, fold) %>%
+  summarise(mean = mean(.estimate))
+
+test %>%
+  rename(estimate = .estimate) %>%
+  select(fold, type, estimate) %>%
+  pivot_wider( names_from = type, values_from = estimate)
+
+fold_test_cutoff %>%
+  filter(.metric == "accuracy") %>%
+  ggplot(aes(x = .estimate, colour = type)) + geom_density()
+
+fold_test_cutoff %>%
+  filter(.metric == "accuracy") %>%
+  ggplot(aes(x = type, y =  .estimate, colour = type)) + geom_boxplot()
+
+test2 <- test$cutoff_analysis
+
+test <- list.files("/home/jonno/setse_1_data/dominance/bison/repeats", 
+                   full.names = T) %>%
+  map(read_rds)  %>% transpose() %>%
+  map(~{.x %>% bind_rows()})
+
+test2<- test$performance_df 
+test3 <- test$cutoff_analysis
+
+
+test3 %>%
+  group_by(fold, seed) %>%
+  summarise(counts = n())
+
+test_na <- test3 %>% filter(is.na(.estimate), .metric == "accuracy",
+                            cutoff == 1)
+
+#the density plot of the mean accuracy by repeat
+test3 %>%
+  filter(.metric =="accuracy",
+         cutoff==1) %>%
+  mutate(cutoff = factor(cutoff)) %>%
+  ggplot(aes( x = .estimate)) + geom_density() +
+  theme(axis.text.x = element_text(angle = 35, hjust = 1))
+
+
+repeat_agg <- test3 %>%
+  group_by(.metric, cutoff, seed) %>%
+  summarise(mean = mean(.estimate),
+            sd = sd(.estimate),
+            median = median(.estimate)) %>%
+  ungroup
+
+repeat_agg  %>%
+  filter(.metric =="accuracy",
+       #  cutoff>0.8,
+         cutoff==1) %>%
+  mutate(cutoff = factor(cutoff)) %>%
+  ggplot(aes(  x = mean)) + geom_density() +
+  theme(axis.text.x = element_text(angle = 35, hjust = 1)) +
+  labs(title = "Repeated cross validation mean accuracy",
+       x = "Elevation ratio minimum",
+       y = "mean accuracy for each k10 repeat")
+
+
+test3 %>%
+  filter(.metric =="accuracy",
+         cutoff == "1") %>%
+  pull(.estimate) %>% t.test(., alternative = "greater", mu = 0.5)
+
+#bootstrap confidence
+set.seed(13)
+resample2 <- bootstraps(test3 %>% filter(.metric=="accuracy", cutoff ==1.1), times = 1000)
+map_dbl(resample2$splits,
+        function(x) {
+          dat <- as.data.frame(x)$.estimate
+          mean(dat>0.5, na.rm = T)
+        })
+
+test <- performance_df %>%
+  filter(holdout) %>%
+  select(winner, loser, class2, naive_res)
+
+table(test$class2, test$naive_res)
+
+
+
+```
+
+#deference
+
+```{r}
+file_id <- grepl("wolf.dat", dominance_files)
+
+g_dl <- load_dl_graph(dominance_files[file_id], directed = FALSE, return_graph = TRUE) %>%
+  simplify
+
+g_mat <- load_dl_graph(dominance_files[file_id], directed = TRUE, return_graph = FALSE) %>%
+  pivot_longer(., cols = -from, names_to = "winner") %>%
+  pivot_wider(., names_from = from, values_from = value) %>%
+  rename(from = winner)
+
+deference_dominace <- domination_function(g_dl, g_mat)
+
+node_win_loss_df <- tibble(node = g_mat %>% pull(from), node_wins = g_mat %>% select(-from) %>% rowSums()) %>%
+      left_join(tibble(node = g_mat %>% select(-from) %>% names, node_losses = g_mat %>% select(-from) %>% colSums()),
+                by = "node") %>%
+      mutate(node_ratio = node_wins/(node_wins + node_losses))
+
+deference_performance <- dominance_performance(g_dl,g_mat, deference_dominace)  %>% #add in total conlicts per edge/node pair
+      left_join(node_win_loss_df %>% select(winner = node, winner_node_ratio = node_ratio), by = "winner" ) %>%
+      left_join(node_win_loss_df %>% select(loser = node, loser_node_ratio = node_ratio), by = "loser" ) %>%
+      mutate(relative_win_ratio = winner_node_ratio/loser_node_ratio,
+             naive_res = case_when(
+               relative_win_ratio>=1 & win_ratio>=0.5 ~"correct",
+               relative_win_ratio<=1 & win_ratio<=0.5 ~"correct",
+               TRUE ~"error"
+             ))
+
+deference_performance_norm 
+#deference_performance2 <- deference_performance
+table(deference_performance2$class2)
+
+table(deference_performance2$naive_res)
+
+
+test_node <- dominance_list$node
+
+test_edge <- dominance_list$edge
+```
+
+#highschool
+
+This first section downloads all the data
+
+data from
+http://moreno.ss.uci.edu/data.html
+
+errors
+
+1 has gender incorrectly coded
+48 is missing atributes and was deleted
+
+
+```{r}
+
+
+
+school_path_1 <- file.path(PLwd, "highschool/raw")
+school_path_2 <- file.path(PLwd, "highschool/graphs")
+
+
+file_tibble <- tibble(file_names = list.files(school_path_1 )) %>%
+  mutate(id = file_names %>% str_remove(.,"comm") %>% str_remove(., "(_|\\.).+") %>% as.integer(),
+         is_att = grepl("att", file_names))
+
+unique(file_tibble$id) %>%
+  walk(~{
+    print(.x)
+    temp <- file_tibble %>%
+      filter(id==.x) %>%
+      arrange(is_att)
+    
+    edges <- file.path(school_path_1, temp$file_names[1]) %>%
+      read_csv(, skip = 4, col_names = F) %>%
+  separate(col = X1, into = c("from", "to", "weight"), sep = " +") %>%
+      mutate(from = trimws(from) %>% as.integer(),
+             to = trimws(to) %>% as.integer(),
+             weight = trimws(weight) %>% as.integer())
+
+    nodes <- file.path(school_path, temp$file_names[2]) %>%
+      read_lines(.) %>%
+      as_tibble
+    
+    nodes <- nodes %>%
+      slice((grep("DATA:", nodes$value)+1):nrow(.))%>%
+      mutate(value = trimws(value)) %>%
+      separate(col = value, into = c("sex", "ethnicity", "grade", "school"), sep = " +") %>%
+      mutate(node = 1:nrow(.),
+             school = ifelse(is.na(school), 1, school)) %>%
+      select(node, everything()) %>%
+      filter(complete.cases(.))
+    
+   g <-graph_from_data_frame(edges, directed = FALSE, vertices = nodes) 
+   
+   g%>%
+      saveRDS(., file = file.path(school_path_2, paste0("school_", temp$id[1], ".rds")))
+
+    
+    
+  })
+
+
+school_info <- list.files(school_path_2, full.names = T) %>%
+  map_df(~{
+    
+    g <- readRDS(.x)
+    
+    comps <-  components(g)
+    
+  temp <- as_data_frame(g, what = "vertices")  %>% as_tibble()
+  
+  eth_fract <- 0:5 %>%
+    map_df(~{
+      
+      temp %>%
+        summarise(value = sum(ethnicity==.x)/nrow(temp)) %>%
+        mutate(ethnicity = paste0("eth_",.x))
+      
+    }) %>%
+    pivot_wider(., names_from = ethnicity, values_from = value) %>%
+    bind_cols(      temp %>%
+        summarise(eth_err = sum(ethnicity > 5)/nrow(temp)) )
+  
+  grade_fract <- temp %>%
+        summarise(grade_valid = sum(grade %in% 7:12)/nrow(temp))
+  
+  
+  tibble(file = basename(.x), 
+         graph_id = file %>% str_remove(., "school_") %>% str_remove(., ".rds") %>% as.integer(),
+         students = nrow(temp), 
+         components = comps$no,
+         schools = length(unique(temp$school)),
+         edge_ratio = ecount(g)/vcount(g),
+         sex_assort = assortativity(g, vertex_attr(g, "sex")),
+         eth_assort = assortativity(g, vertex_attr(g, "ethnicity")),
+         grade_assort = assortativity(g, vertex_attr(g, "grade")),
+         sch_assort = assortativity(g, vertex_attr(g, "school")),
+         fract_largest_comp = max(comps$csize)/students,
+         sex_1 = sum(temp$sex==1)/students,
+         sex_2 = sum(temp$sex==2)/students) %>%
+    bind_cols(eth_fract, grade_fract)
+  
+  })
+
+
+
+
+
+#no pattern in edge density
+school_info %>%
+  filter(id != 1) %>%
+  ggplot(aes(x = students, y = edge_ratio, colour = factor(schools))) + geom_point()
+
+
+school_info %>%
+ # filter(schools ==2) %>%
+  select(contains("assort")) %>%
+  pivot_longer(cols = everything()) %>%
+    ggplot(aes(x = value, color = name)) + geom_density()
+
+
+
+list.files(school_path_2, full.names = T)
+
+
+school_info %>%
+  filter(schools ==2) %>%
+  pull(file) %>% 
+  walk(~{
+    
+    graph_name <- .x %>% str_remove(., "school_") %>% str_remove(., ".rds") %>% as.integer()
+    
+     out <- readRDS(file.path(school_path_2,.x)) %>%
+       set_vertex_attr(., "node_names", value = 1:vcount(.)) %>%
+       remove_small_components() %>%
+  set_edge_attr(., "k", value = edge_attr(., "weight")*100) %>%
+        prepare_SETSe_binary(., node_names = node_names, k = NULL, 
+                             force_var = "school", positive_value = 1) %>%
+       SETSe_bicomp(tol =2e-4, 
+                      verbose = F) %>%
+    map(~{ .x %>% 
+        mutate(graph_id = graph_name)})
+     
+     saveRDS(out, file.path(PLwd, "highschool", "embeds_school", .x))
+    
+  })
+
+
+test <- list.files(file.path(PLwd, "highschool", "embeds_school")) %>%
+  map_df(~{
+     
+    temp <- read_rds(file.path(PLwd, "highschool", "embeds_school", .x))
+    
+    edge_vals <- temp$edge_embeddings %>%
+      separate(col = "edge_name", into = c("from", "to"), sep = "-") %>%
+      select(from, to, tension, strain) %>%
+      pivot_longer(., cols = c(from, to), values_to ="node") %>%
+      group_by(node) %>%
+      summarise(tension = mean(tension),
+                strain = mean(strain))
+    
+    g_df <- read_rds(file.path(PLwd, "highschool", "graphs", .x)) %>%
+      as_data_frame(., what = "vertices") %>% rename(node = name)
+    
+    
+    out <- left_join(temp$node_embeddings %>%select(node, elevation, graph_id), edge_vals, by = "node") %>%
+      left_join(g_df , by = "node")
+    
+   return(out)
+    
+  }) %>%
+  filter(!is.na(tension)) %>%
+  group_by(graph_id) %>%
+  summarise(
+    strain = mean(strain),
+    elevation = mean(abs(elevation)),
+    tension = mean(tension)
+          ) %>%
+  left_join(school_info, by = "graph_id")
+
+
+
+test %>%
+  ggplot(aes(x = (sch_assort), y = log(elevation), color = sqrt(sch_assort))) + geom_point()+
+  scale_color_viridis_c()
+
+  lm(sch_assort ~ elevation + tension , test %>% mutate(elevation =log(elevation))) %>% summary()
+
+chem <- read_csv("/home/jonno/Downloads/BradleyMeltingPointDatasetClean.csv")
+
+```
+
+This package might be able to read smiles strings into R.
+I don't know how they would then be conveted to igraph objects though
+https://bioconductor.org/packages/devel/bioc/vignettes/ChemmineR/inst/doc/ChemmineR.html
+
