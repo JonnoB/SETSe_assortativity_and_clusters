@@ -24,6 +24,7 @@ Stephen G. Kobourov
 Professor
 Department of Computer Science
 University of Arizona
+kobourov@cs.arizona.edu
 
 %postdoc of Kobourov
 Felice DeLuca
@@ -185,7 +186,92 @@ peel_strain_sum %>%
 ```
 
 
-#n-dimensional strain
+##The position of individual nodes 
+
+This chunk shows that individual nodes naturally cluster by elevation with thier own sub groups sometimes the tension is also needed. I am not sure how to extract this without using a model though
+```{r}
+#There is possibly a problem with the node position code. The part that created detected_communities is producing 40k lines intead of 20k, this may or may not be a problem...
+
+#....The 40k lines are becuase both groups a and be are checked.
+
+source(file = file.path(SubcodeFolder, "node_position.R"))
+ 
+#Use ARI to compare the quality of all clustering techniques
+combos_df <- expand_grid(names = detected_communities %>% select(contains("clustering")) %>% names, graph_id = unique(detected_communities$graph_id))
+
+test_ARI <-1:nrow(combos_df) %>%
+  map_df(~{
+    print(.x)
+    temp <-detected_communities %>%
+      filter(graph_id == combos_df$graph_id[.x])
+    
+    tibble(
+      name = combos_df$names[.x],
+      graph_id = combos_df$graph_id[.x],
+      graph_class = unique(temp$graph_class),
+      ARI = adjustedRandIndex(temp$sub_class, temp %>% pull(combos_df$names[.x]) ))
+    
+  })
+
+#plot the results
+#The ability to cluster graphs that have communities or groups that are not defined by their linking to each other greatly outstrips everything else
+
+#plot and example of the true communities
+detected_communities %>%
+  mutate(sub_class = str_replace(sub_class, "_", " ")) %>%
+  filter(graph_id %in% seq(100, 500, by = 100)) %>%
+  ggplot(aes(x = tension_mean_range, y = elevation_range, colour = sub_class)) + geom_point() +
+  facet_wrap(~graph_class) +
+  labs(title = "The position of individual nodes in each graph type of Peel's Quintet",
+       x = "node tension",
+       y = "node elevation",
+       color = "sub class") +
+  theme(legend.position = c(0.9, 0.1), legend.justification = c(1, 0)) #positions the legend in the middle of the 6th panel
+ggsave(file.path(FiguresFolder,  "peels_quintet_groups_in_setse_space.pdf"))   
+
+
+ #plot showing how SETSe does the comparisons
+ detected_communities %>%
+    filter(graph_id %in% seq(100, 500, by = 100)) %>%
+  ggplot(aes(x = tension_mean, y = elevation, colour = factor(clustering_kmeans))) + geom_point() +
+  facet_wrap(~graph_class, scales = "free_y") +
+   labs(title = "the position of each node in a graph coloured by kmeans groups",
+        colour = "kmeans cluster")
+
+              
+        #when using knowlegde of the groups
+        test_ARI %>%
+          filter(!grepl("full", name)) %>%
+          mutate(clustering = name %>% str_remove(., "clustering_") %>% str_replace(., "_", " "),
+                 clustering = ifelse(clustering =="kmeans", "SETSe kmeans", clustering)) %>%
+          ggplot(aes(x = clustering, y = ARI, fill = clustering)) + geom_boxplot() +
+          facet_wrap(~graph_class) +
+          labs(title = "Adjusted rand index for different clustering methods, for each graph type",
+               x = "Clustering method") + 
+          theme(
+            axis.text.x=element_blank(),
+            axis.ticks.x=element_blank())
+    ggsave(file.path(FiguresFolder,  "peels_clustering_ari.pdf"))        
+        
+         #when not using knowledge of the groups
+         test_ARI %>%
+          filter(grepl("full", name))  %>%
+          mutate(clustering = name %>% str_remove(., "clustering_") %>% str_replace(., "_", " "),
+                 clustering = ifelse(clustering =="kmeans", "SETSe kmeans", clustering)) %>%
+          ggplot(aes(x = clustering, y = ARI, fill = clustering)) + geom_boxplot() +
+          facet_wrap(~graph_class) +
+          labs(title = "Adjusted rand index for different clustering methods, for each graph type")
+
+         #
+ test <- test_ARI %>%
+    group_by(name, graph_class) %>%
+    summarise(mean = mean(ARI))
+```
+
+
+##n-dimensional strain
+
+This is not used in the paper. IT is only kept so I don't forget
 
 C relates to A and B like A and B relate to each other. C relates to itself, like B relates to itself
 
@@ -275,152 +361,6 @@ test %>%
        y = "Mean node height of class A",
        colour = "graph type")
 ggsave(file.path(FiguresFolder, "Seperating_Peels_quintet.pdf"))
-```
-
-
-##check tension
-
-I am not sure that the dimensions don't interact
-```{r}
-
-#two node network
-matrix(c(0,0,0,
-         1,3,4), nrow = 2, byrow = T)
-
-diff <- c(1,3,4)
-
-H3 <- sqrt(sum(diff^2))
-
-H1 <- sqrt(sum(diff[c(1,2)]^2))
-H2 <- sqrt(sum(diff[c(1,3)]^2))
-
-H12 <- sqrt(sum(c(H1, H2)^2))
-k <- 100
-#end point of line
-v1 <- c(1,0,0)
-v2 <- c(0,3,0)
-v3 <- c(0,0,4)
-h <- v1+v2+v3
-
-
-sqrt(1+3^2)
-sqrt(1+16)
-
-h_length <- sqrt(sum(h^2))
-strain <- h_length-1
-tension <- 100*strain
-
-
-cosine_sim <- function(v, h){
-  
-vh <- sum(v*h)
-
-sqrtv <- sqrt(sum(v^2))
-sqrth <- sqrt(sum(h^2))
-out <- vh/(sqrtv*sqrth)
-#absv <- sum(abs(v))
-#absh <- sum(abs(h))
-#out <- vh/(absv*absh)
-
-return(out)
-}
-
-
-cosine_sim2 <- function(v, h){
-  #this is the same as cosine sim as the vectors are all one dimensional meaning the 
-  #formula simplifies
-v2 <- sum(v)
-
-sqrtv <- sqrt(sum(v^2))
-sqrth <- sqrt(sum(h^2))
-out <- v2/(sqrth)
-#absv <- sum(abs(v))
-#absh <- sum(abs(h))
-#out <- vh/(absv*absh)
-
-return(out)
-}
-
-
-cosine_sim3 <- function(h, d){
-  
-  abs(h[d])/sqrt(sum(h^2))
-  
-}
-
-cosine_sim4 <- function(h, d){
-  #calculates the fraction of the hypotenuse contributed thus the fraction of tension
-  h[d]^2/sum(h^2)
-  
-}
-
-
-list(v1, v2,v3) %>%
-  map_dbl(~cosine_sim2(v = .x, h = h)) %>%  {.^2}
-
-v1_simp <-c(1, 0)
-v2_simp <- c(0,3)
-h_simp <- c(1,3)
-
-list(v1_simp, v2_simp) %>%
-  map_dbl(~cosine_sim2(v = .x, h = h_simp)) %>% {.*sqrt(10)}
-  
-1:3 %>%
-  map_dbl(~cosine_sim3(h,.x)) %>% {.^2}
-
-1:3 %>%
-  map_dbl(~cosine_sim4(h,.x))
-
-
-edge_ten2 <- function(a,d=1, k=1){
-  
-  k*(sqrt(a^2+ d^2)-d)
-  
-}
-
-edge_ten <- function(a,d=1, k=1){
-#calculate the edge tension of a n dimensional triangle  
-  k*(sqrt(sum(c(a^2, d^2)))-d)
-  
-}
-
-
-(c(edge_ten(3),edge_ten(4)))
-edge_ten(c(3,4))
-
-
-((c(edge_ten(3),edge_ten(4)))/edge_ten(c(3,4)))^2 %>% sum
-
-
-edge_ten(c(3,4))
-
-
-edge_dims <- c(1,3,40)  
-
-  edge_dims %>%
-  map_dbl(~cosine_sim2(.x,edge_dims)) %>% {.*edge_ten(edge_dims[-1])}
-
-  c(1,3) %>%
-  map_dbl(~cosine_sim2(.x,h[c(1,2)])) %>% {.^2*edge_ten(c(3))}
-
-
-    c(1,4) %>%
-  map_dbl(~cosine_sim2(.x,h[c(1,3)])) %>% {.^2*edge_ten(c(3))}
-
-    
-    
-    c(  c(1,3) %>%
-  map_dbl(~cosine_sim2(.x,h[c(1,2)])) %>% {.^2*edge_ten(c(3))},
-
-
-    c(1,4) %>%
-  map_dbl(~cosine_sim2(.x,h[c(1,3)])) %>% {.^2*edge_ten(c(3))}) %>% sum
-
-a<- 3
-d<- 10
-k <- 1
-     k*(sqrt(sum(c(a^2, d^2)))-1)
-    
 ```
 
 
@@ -1436,88 +1376,6 @@ embeddings_data$node_embeddings %>%
   filter(Iter!=0) %>%
   ggplot(aes(x = elevation))+ geom_density()
       
-```
-
-#The position of individual nodes 
-
-This chunk shows that individual nodes naturally cluster by elevation with thier own sub groups sometimes the tension is also needed. I am not sure how to extract this without using a model though
-```{r}
-#There is possibly a problem with the node position code. The part that created detected_communities is producing 40k lines intead of 20k, this may or may not be a problem...
-
-#....The 40k lines are becuase both groups a and be are checked.
-
-source(file = file.path(SubcodeFolder, "node_position.R"))
- 
-#Use ARI to compare the quality of all clustering techniques
-combos_df <- expand_grid(names = detected_communities %>% select(contains("clustering")) %>% names, graph_id = unique(detected_communities$graph_id))
-
-test_ARI <-1:nrow(combos_df) %>%
-  map_df(~{
-    print(.x)
-    temp <-detected_communities %>%
-      filter(graph_id == combos_df$graph_id[.x])
-    
-    tibble(
-      name = combos_df$names[.x],
-      graph_id = combos_df$graph_id[.x],
-      graph_class = unique(temp$graph_class),
-      ARI = adjustedRandIndex(temp$sub_class, temp %>% pull(combos_df$names[.x]) ))
-    
-  })
-
-#plot the results
-#The ability to cluster graphs that have communities or groups that are not defined by their linking to each other greatly outstrips everything else
-
-#plot and example of the true communities
-detected_communities %>%
-  mutate(sub_class = str_replace(sub_class, "_", " ")) %>%
-  filter(graph_id %in% seq(100, 500, by = 100)) %>%
-  ggplot(aes(x = tension_mean_range, y = elevation_range, colour = sub_class)) + geom_point() +
-  facet_wrap(~graph_class) +
-  labs(title = "The position of individual nodes in each graph type of Peel's Quintet",
-       x = "node tension",
-       y = "node elevation",
-       color = "sub class") +
-  theme(legend.position = c(0.9, 0.1), legend.justification = c(1, 0)) #positions the legend in the middle of the 6th panel
-ggsave(file.path(FiguresFolder,  "peels_quintet_groups_in_setse_space.pdf"))   
-
-
- #plot showing how SETSe does the comparisons
- detected_communities %>%
-    filter(graph_id %in% seq(100, 500, by = 100)) %>%
-  ggplot(aes(x = tension_mean, y = elevation, colour = factor(clustering_kmeans))) + geom_point() +
-  facet_wrap(~graph_class, scales = "free_y") +
-   labs(title = "the position of each node in a graph coloured by kmeans groups",
-        colour = "kmeans cluster")
-
-              
-        #when using knowlegde of the groups
-        test_ARI %>%
-          filter(!grepl("full", name)) %>%
-          mutate(clustering = name %>% str_remove(., "clustering_") %>% str_replace(., "_", " "),
-                 clustering = ifelse(clustering =="kmeans", "SETSe kmeans", clustering)) %>%
-          ggplot(aes(x = clustering, y = ARI, fill = clustering)) + geom_boxplot() +
-          facet_wrap(~graph_class) +
-          labs(title = "Adjusted rand index for different clustering methods, for each graph type",
-               x = "Clustering method") + 
-          theme(
-            axis.text.x=element_blank(),
-            axis.ticks.x=element_blank())
-    ggsave(file.path(FiguresFolder,  "peels_clustering_ari.pdf"))        
-        
-         #when not using knowledge of the groups
-         test_ARI %>%
-          filter(grepl("full", name))  %>%
-          mutate(clustering = name %>% str_remove(., "clustering_") %>% str_replace(., "_", " "),
-                 clustering = ifelse(clustering =="kmeans", "SETSe kmeans", clustering)) %>%
-          ggplot(aes(x = clustering, y = ARI, fill = clustering)) + geom_boxplot() +
-          facet_wrap(~graph_class) +
-          labs(title = "Adjusted rand index for different clustering methods, for each graph type")
-
-         #
- test <- test_ARI %>%
-    group_by(name, graph_class) %>%
-    summarise(mean = mean(ARI))
 ```
 
 #one vs all 

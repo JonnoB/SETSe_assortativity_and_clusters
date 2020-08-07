@@ -263,6 +263,7 @@ test <- c("Rota", "Sabio", "SAT1", "SAT2") %>%
   map(~{bind_rows(.x)})
 
 
+test
 
 
 test2 <- test$node_details
@@ -271,6 +272,72 @@ test2 %>%
   ggplot(aes(x = mean_tension, y = mean_elevation, colour = core_node)) + geom_point() +
   facet_wrap(~graph_id) +
   labs(title = "tension and strain of 1 vs all analysis of 4 accounting firms")
+
+
+#Combine
+node_df <- test$node_embeddings
+
+```
+
+#plot networks
+```{r}
+force_var = "person_name"
+node_names = "name"
+k = "k"
+
+g <- SAT2 %>%
+  set_edge_attr(., "k", value = edge_attr(., "weight")*100) 
+
+all_levels <- unique(vertex_attr(g, force_var)) %>%
+  map(~{
+    print(.x)
+    embeddings_data <- g %>%
+      prepare_SETSe_binary(., node_names = node_names, k = NULL, force_var = force_var, positive_value = .x) %>%
+      auto_SETSe() #why isn't bicomp used?
+    
+    person_level <- .x
+    embeddings_data %>% map(~{
+      .x %>%
+        mutate(node_id = person_level)
+    } )
+    
+    
+  }) %>%
+  transpose() %>%
+  map(~bind_rows(.x))
+
+
+set.seed(234)
+network_layout_df <- layout_nicely(g)
+
+node_embeddings <- all_levels$node_embeddings
+node_id_ref <- "ANA PAULA"
+
+v_df <-as_data_frame(g, what = "vertices") %>%
+  left_join(., node_embeddings %>%
+  filter(node_id == node_id_ref ),
+  by = c("name"="node")) %>%
+  mutate(focus_node = person_name==node_id_ref)
+
+e_df <- as_data_frame(g) %>%
+  mutate(edge_name = paste(from, to, sep = "-")) %>%
+  left_join(all_levels$edge_embeddings %>% 
+              filter(node_id == node_id_ref) %>%
+              select(-k) ) %>%
+  mutate(percentile = percent_rank(tension))
+
+embedded_g <-graph_from_data_frame(e_df %>%
+ filter(percentile>0),
+  directed = FALSE, vertices = v_df)
+
+
+embedded_g %>%
+  ggraph(layout = network_layout_df)+
+      geom_edge_fan(aes(colour = tension)) +
+    geom_node_point(aes(color = elevation, size = focus_node)) +
+  scale_color_viridis() +
+  scale_edge_color_viridis(option = "B")+
+  labs(title = "Structural connectome 1: Elevation and tension embeddings viewed from node 39")
 
 ```
 
