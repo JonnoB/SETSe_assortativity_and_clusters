@@ -1,8 +1,10 @@
-#Introduction_to_SETS
+# Introduction_to_SETS
 
 This repo contains the code for the methods paper introducing the SETS embeddings algortihm (aka SETSe algortihm).
 Goal of this introduction is to explain the basic theory and practical operation of SETSe for projecting transport networks into 
 the Strain, Elevation and Tension dimensions.
+
+The main code script used in the paper is "introduction_to_setse2.Rmd". The GEM embeddings are done using the python script "peels_embedding.py". The post processing of the data produced by the python script is done in "comparison_embeddings.Rmd"
 
 # Related repos
 
