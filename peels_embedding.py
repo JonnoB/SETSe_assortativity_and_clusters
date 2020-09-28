@@ -21,7 +21,7 @@ from gem.embedding.node2vec import node2vec
 from gem.embedding.sdne import SDNE
 from argparse import ArgumentParser
 
-dims = 8
+dims = 2
 
 plwd = "/home/jonno/setse_1_data"
 peels_folder = plwd + "/peels_graphml"

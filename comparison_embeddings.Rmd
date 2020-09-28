@@ -442,3 +442,12 @@ ggplot(iris, aes( x = Sepal.Width, y = Sepal.Length, colour = Petal.Length)) + g
 
 ```
 
+
+#Facebook conversion
+
+This section converts the facebook igraph objects to graphml. They can then be exported to the HPC and the GEM embeddings methods run on them
+
+```{r}
+
+```
+

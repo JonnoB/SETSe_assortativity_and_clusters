@@ -8,28 +8,6 @@ editor_options:
 ---
 
 
-Possibly reviewers
-Yong-Yeol Ahn
-Assistant Professor
-School of Informatics and Computing
-Indiana University
-
-Alessandro Flammini
-Professor @ School of Informatics, Computing and Engineering at Indiana University, 
-
-Any one in Emilio Ferrara's group at USC
-
-
-Stephen G. Kobourov
-Professor
-Department of Computer Science
-University of Arizona
-kobourov@cs.arizona.edu
-
-%postdoc of Kobourov
-Felice DeLuca
-
-
 repo on some interesting road safety network data
 https://github.com/Moradii/stlnpp
 The paper
@@ -218,7 +196,8 @@ test_ARI <-1:nrow(combos_df) %>%
 
 #plot and example of the true communities
 detected_communities %>%
-  mutate(sub_class = str_replace(sub_class, "_", " ")) %>%
+  mutate(sub_class = str_replace(sub_class, "_", " "),
+         graph_class = paste("Type", graph_class)) %>%
   filter(graph_id %in% seq(100, 500, by = 100)) %>%
   ggplot(aes(x = tension_mean_range, y = elevation_range, colour = sub_class)) + geom_point() +
   facet_wrap(~graph_class) +
