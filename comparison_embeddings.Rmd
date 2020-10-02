@@ -7,9 +7,25 @@ editor_options:
   chunk_output_type: console
 ---
 
+
+module unload compilers mpi
+module load compilers/gnu/4.9.2
+module load python3/3.6
+module load cuda/8.0.61-patch2/gnu-4.9.2
+module load cudnn/6.0/cuda-8.0
+module load tensorflow/1.8.0/cpu
+
+module unload compilers mpi
+module load compilers/gnu/4.9.2
+module load python3/3.6
+module load keras/2.2.4
+
+
 This markdown is to convert the basic set of peels quintet graphs to the graphML format, so that they can be imported into python and used witht the GEM, library.
 
 This markdown file should be run after all chunks in `Introduction_to_sets2.Rmd`  down to `peel strain` has been run
+
+#Create graphml
 
 ```{r}
 graphml_path <- file.path(PLwd, "peels_graphml")
@@ -43,6 +59,79 @@ g %>%
   )
 
 
+```
+
+
+##Weighted graphml
+
+This chunk creates a weighted network where the edge weights/distances are the strain of the SETSe embeddings. 
+This effectively acts as a double embeddings where first the network is embedded using SETSe and second the network is embedded using the methods in GEM
+```{r}
+
+1:500 %>% walk(~{
+  #get the ith network
+g <- multi_quintet[[.x]]
+#extract the type which will be used in the filename of the graphml file
+graph_type <- graph_attr(g, "type")
+#get the edge list of the network
+g_edge <- as_data_frame(g)
+#create the name of the graphml file
+file_path <- file.path(file.path(PLwd, "peels_weighted_graphml"), 
+                       paste0("graph_id_", .x, "_type_", graph_type, ".graphml"))
+#load the SETSe embedded data of the same network that has been loaded
+embeddings_data <- read_rds(list.files(file.path(PLwd, "peel_strain_files"), 
+                                       full.names= T, 
+                                       patter = paste("ref", .x, "k_0", sep = "_")) )
+#extract the edge embeddings
+g_edge <- embeddings_data$edge_embeddings %>%
+  separate(col = "edge_name", into = c("from", "to"), sep = "_", remove = FALSE, convert = T, ) %>%
+  select(from, to, tension) %>%
+  left_join(g_edge, ., by = c("from", "to")) %>%
+  select(from, to, weight = tension)
+
+#re-assemble to graph with edge weights as graph embeddings
+graph_from_data_frame(g_edge, directed = FALSE) %>%
+  write_graph(., file_path, format = "graphml")
+
+print(paste("network", .x, "graph type", graph_type, "completed"))
+
+}
+)
+
+
+```
+
+#Directed
+
+I was worried that GEM was not embedding properly, due to some wording in the documentation. To check I created symmetrical directed graphs. THe result was the same. so now worries
+
+```{r}
+# 1:500 %>% walk(~{
+#   #get the ith network
+# g <- multi_quintet[[.x]]
+# #extract the type which will be used in the filename of the graphml file
+# graph_type <- graph_attr(g, "type")
+# #get the edge list of the network
+# g_edge <- as_data_frame(g)
+# #create the name of the graphml file
+# file_path <- file.path(file.path(PLwd, "peels_graphml"), 
+#                        paste0("graph_id_", .x, "_type_", graph_type, ".graphml"))
+# 
+# #extract the edge embeddings
+# g_edge <- g_edge %>%
+#   rename(c = from, from = to) %>%
+#   rename(to = c) %>%
+#   bind_rows(g_edge) %>%
+#   select(-type)
+# 
+# #re-assemble to graph with edge weights as graph embeddings
+# graph_from_data_frame(g_edge, directed = TRUE) %>%
+#   write_graph(., file_path, format = "graphml")
+# 
+# print(paste("network", .x, "graph type", graph_type, "completed"))
+# 
+# }
+# )
 ```
 
 #load back in the embeddings
@@ -237,7 +326,9 @@ node_data_agg <-node_data2 %>%
              embeddings_dimensions = "2",
              graph_id = as.integer(graph_id))
 
-
+GEM_embeds_agg %>%
+  group_by(embeddings_method) %>%
+  summarise(counts = n())
 ```
 
 ##node2vec
@@ -348,6 +439,13 @@ n2v_embeds_agg <-  node2vec_embeds %>%
             dimension_2 = mean(dimension_2))
 
 
+```
+
+
+#compare methods
+
+##all network embeds
+```{r}
 bind_rows(GEM_embeds_agg, n2v_embeds_agg, node_data_agg) %>%
   group_by(embeddings_method) %>%
   mutate(dimension_1 = (dimension_1-min(dimension_1))/(max(dimension_1)-min(dimension_1)),
@@ -361,11 +459,7 @@ bind_rows(GEM_embeds_agg, n2v_embeds_agg, node_data_agg) %>%
        x = "first dimension (tension for SETSe)",
        y = "second dimension (elevation for SETSe)")
 ggsave(file.path(FiguresFolder, "Seperating_Peels_quintet.pdf"))
-
 ```
-
-
-#compare methods
 
 ```{r}
 
@@ -443,11 +537,209 @@ ggplot(iris, aes( x = Sepal.Width, y = Sepal.Length, colour = Petal.Length)) + g
 ```
 
 
+
 #Facebook conversion
 
 This section converts the facebook igraph objects to graphml. They can then be exported to the HPC and the GEM embeddings methods run on them
 
 ```{r}
+
+#File paths of all the facebook networks in igraph format
+uni_files <- list.files("/home/jonno/setse_1_data/facebook100/facebook100_igraph", full.names = T)
+
+#create new folder
+graphml_path <- file.path(PLwd, "facebook100", "facebook100_graphml")
+if(!dir.exists(graphml_path)){ dir.create(graphml_path)}
+
+1:length(uni_files) %>% walk(~{
+
+#file path to load
+current_path <- uni_files[.x]
+
+#load file
+g <- read_rds(current_path)
+
+#strip all but major component
+g2 <- remove_small_components(g)
+
+#new file path
+new_path <- current_path %>% 
+  dirname() %>%
+  dirname() %>%
+  file.path(., "facebook100_graphml"
+            , str_replace(basename(current_path), 
+                          ".rds", ".graphml") )
+
+#save as graphml
+write_graph(g2, file = new_path, format = "graphml" )
+
+})
+```
+
+##facebook csv
+
+This chunk is used to create the csv that the python script will read from.
+The script will use only data from the specific task id
+
+
+```{r}
+
+expand_grid(model = c("HOPE", 
+                      "LapEig", 
+                      "LLE", 
+                      "SDNE",
+                      "node2vec"
+                      ),
+            unis = basename(uni_files) %>% str_remove(., ".rds")) %>%
+  write_csv(., file.path(PLwd, "facebook_model_uni_python.csv"))
+
+```
+
+
+#Compare embeddings
+
+##memory
+
+Create a dataframe which contains the memory required for each embedding
+
+```{r}
+
+file_paths <- list.files("/home/jonno/setse_1_data/facebookpython", pattern = "facebookpython.e", full.names = T)
+
+
+#this complicated method is because sometimes when I was trying to get it to work
+#some examples would be missing. This prevents errors.
+python_memory_df <- str_remove(basename(file_paths), ".*\\.") %>% as.integer() %>% map_df(~{
+  
+
+ file_number_to_open <- grep(paste0("\\.", .x, "$"), file_paths)
+
+ file_name <- file_paths[file_number_to_open]
+
+ print_data <- read_lines(file_name)
+
+tibble( Mbytes = print_data[grep("Maximum resident set size", print_data)] %>% str_extract(., "[0-9]+") %>% as.numeric()/1000, 
+       file_number = .x
+       )
+
+}) 
+
+
+
+```
+
+
+#time
+
+extract the time from the algorithms
+
+```{r}
+python_time_taken_df <- str_remove(basename(file_paths), ".*\\.") %>% as.integer() %>% map_df(~{
+  
+
+ file_number_to_open <-grep(paste0("\\.", .x, "$"), file_paths)
+
+ file_name <- file_paths[file_number_to_open]
+
+ print_data <- read_lines(file_name)
+
+tibble( time = print_data[grep("Elapsed ", print_data)] %>% str_remove_all("\\\tElapsed \\(wall clock\\) time \\(h:mm:ss or m:ss\\): "), 
+       file_number = .x)
+
+})  %>%
+  mutate(time_length = str_count(time, pattern = ":"),
+         time2 = ifelse(time_length==1, paste0("00:", time), time),
+         time2 = hms(time2))
+
+
+#do the same for SETSe
+
+SETSe_file_paths <- list.files("/home/jonno/setse_1_data/facebook_embeddings/facebookauto", pattern = "facebookauto.e", full.names = T)
+
+SETSe_time_taken <- 1:length(SETSe_file_paths) %>% map_df(~{
+  
+
+ file_number_to_open <-grep(paste0("\\.", .x, "$"), SETSe_file_paths)
+
+ file_name <- SETSe_file_paths[file_number_to_open]
+
+ print_data <- read_lines(file_name)
+
+tibble( time = print_data[grep("Elapsed ", print_data)] %>% str_remove_all("\\\tElapsed \\(wall clock\\) time \\(h:mm:ss or m:ss\\): "), 
+       data_id = .x)
+
+})  %>%
+  mutate(time_length = str_count(time, pattern = ":"),
+         time2 = ifelse(time_length==1, paste0("00:", time), time),
+         time2 = hms(time2)) %>% 
+  select(-data_id) %>%
+  bind_cols(., uni_stats %>% arrange(nodes) %>% slice(1:nrow(memory_df_auto))) %>%
+  select(time, data_id, time_length, time2)
+  
+
+
+```
+
+
+#plot time memory
+
+```{r}
+embedding_details <-expand_grid(model = c("HOPE", 
+                      "LapEig", 
+                      "LLE", 
+                      "SDNE",
+                      "node2vec"
+                      ),
+            file_name = basename(uni_files) %>% str_remove(., ".rds")) %>%
+  mutate(file_number = 1:n()) %>%
+  left_join(., python_memory_df) %>%
+  left_join(., python_time_taken_df %>% select(file_number, time = time2)) %>%
+  left_join(uni_stats %>% select(2:6), by = "file_name") %>%
+  bind_rows(., memory_df_auto %>%
+              select(nodes, edges, Mbytes, data_id) %>%
+              mutate(model = "SETSe") %>%
+              left_join(SETSe_time_taken) %>% select(nodes:model, time = time2)
+  ) %>%
+  mutate(time2 = as.numeric(time)) %>%
+  filter(model %in% c("HOPE", "LapEig","LLE", "SETSe"))
+
+#LLE has not been embedded, why?
+embedding_details %>%
+  group_by(model) %>%
+  summarise(count = n())
+
+
+
+#Memory
+embedding_details %>%
+  filter(Mbytes <16000) %>%
+   # filter(nodes < 9000) %>%
+  ggplot(aes(x = nodes, y = Mbytes, colour = model)) + geom_point() +
+  labs(title = "Maximum Megabytes of RAM used during embedding process",
+       x = "Total number of nodes in network")
+
+#HOPE and LapEig have a quadratic memory usage. LLE is linear but didn't work so is ignored
+
+
+#Time
+embedding_details %>%
+  filter(Mbytes <16000) %>%
+  #  filter(nodes < 9000) %>%
+  ggplot(aes(x = nodes, y = as.numeric(time)/60, colour = model)) + geom_point() +
+  labs(title = "Time in minutes used during embedding process",
+       x = "Total number of nodes in network")
+```
+
+```{r}
+
+embedded_files <- list.files("/home/jonno/setse_1_data/facebookpython", pattern = ".csv", full.names = T)
+
+ tibble(embedded_files = basename(embedded_files)) %>%
+  separate(col = embedded_files, into = c("model", "file_name"), sep = "_", remove = FALSE) %>%
+  mutate(file_name = file_name %>% str_remove(., ".csv")) 
+
+ load_file <- embedded_files[1]
+ embeddings_df <- read_csv(load_file, col_names = FALSE)
 
 ```
 

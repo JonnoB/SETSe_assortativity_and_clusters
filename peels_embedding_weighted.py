@@ -24,8 +24,8 @@ from argparse import ArgumentParser
 dims = 2
 
 plwd = "/home/jonno/setse_1_data"
-peels_folder = plwd + "/peels_graphml"
-benchmark_folder = plwd + "/peel_benchmark_embeddings" + str(dims)
+peels_folder = plwd + "/peels_weighted_graphml"
+benchmark_folder = plwd + "/peel_benchmark_embeddings_weighted" + str(dims)
 # Set the working directory to load the data from
 os.chdir(peels_folder)
 # get the list of files to embed
@@ -36,20 +36,14 @@ models = []
 models.append(HOPE(d=dims*2, beta=0.01))
 models.append(LaplacianEigenmaps(d=dims))
 models.append(LocallyLinearEmbedding(d=dims))
-#models.append(node2vec(d=2, max_iter=1, walk_len=80, num_walks=10, con_size=10, ret_p=1, inout_p=1))
-# models.append(SDNE(d=dims*2, beta=5, alpha=1e-5, nu1=1e-6, nu2=1e-6, K=3, n_units=[50, 15, ], rho=0.3, n_iter=50, xeta=0.01,
-#                   n_batch=100,
-#                   modelfile=['enc_model.json', 'dec_model.json'],
-#                   weightfile=['enc_weights.hdf5', 'dec_weights.hdf5']))
+# node2vec can go here if I can get it to work
+models.append(SDNE(d=dims*2, beta=5, alpha=1e-5, nu1=1e-6, nu2=1e-6, K=3, n_units=[50, 15, ], rho=0.3, n_iter=50,
+                   xeta=0.01,
+                   n_batch=100,
+                   modelfile=['enc_model.json', 'dec_model.json'],
+                   weightfile=['enc_weights.hdf5', 'dec_weights.hdf5']))
 
-#models.append(GraphFactorization(d=2, max_iter=50000, eta=1 * 10 ** -4, regu=1.0, data_set='peels'))
-
-model_names = ["HOPE",
-               "LapEig",
-               "LLE",
-#               "node2vec",
-              # "SDNE"
-               ]
+model_names = ["HOPE", "LapEig", "LLE", "SDNE"]
 for num in range(len(models)):
 
     for peel_path in graphml_file_paths:
@@ -65,10 +59,10 @@ for num in range(len(models)):
         else:
             # read the graph ml file
             G = nx.read_graphml(peel_path)
-
+            print("so far so good")
             # create an embedding. Outputs the embeddings and possibly time... I am not sure
             os.chdir('/home/jonno/GEM')
-            Y, t = models[num].learn_embedding(graph=G, edge_f=None, is_weighted=False, no_python=True)
+            Y, t = models[num].learn_embedding(graph=G, edge_f=None, is_weighted=True, no_python=True)
 
             os.chdir(peels_folder)
 

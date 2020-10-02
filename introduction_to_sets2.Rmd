@@ -18,7 +18,7 @@ https://doi.org/10.1016/j.spasta.2019.100400
 #Set up
 ```{r Setup}
 
-packages <- c("tidyverse", "igraph","readr","readxl", "broom", "stringr", "xtable", "rlang", "latex2exp", "yardstick", "minpack.lm", "ggraph", "patchwork", "rsample", "VGAM", "class", "mclust", "R.matlab", "ranger")
+packages <- c("tidyverse", "igraph","readr","readxl", "broom", "stringr", "xtable", "rlang", "latex2exp", "yardstick", "minpack.lm", "ggraph", "patchwork", "rsample", "VGAM", "class", "mclust", "R.matlab", "ranger", "lubridate")
 
 new.packages <- packages[!(packages %in% installed.packages()[,"Package"])]
 if(length(new.packages)) install.packages(new.packages)
@@ -875,7 +875,6 @@ g %>%
 ##Classificiation
 
 This chunk compares nearest neighbout classificationusing setse against neighbour classification using the original graph
-
 
 The setse embeddings beats the network neighbour approach on average across all values of k, for all metrics.
 

@@ -105,6 +105,7 @@ k_options2 <- k_options %>%
     k <- .x
     
     save_path <- file.path(PLwd, "peel_strain_files", paste0("graph_ref_", graph_ref, "_k_", .x, ".rds") )
+    
 if(!file.exists(save_path)){    
   embeddings_data <- auto_SETSe(g_out,
                                force = "force",
@@ -123,20 +124,6 @@ if(!file.exists(save_path)){
           graph_id = graph_ref)
       })
     
-#The biconnected components don't work due to a naming error why?   
-
-  # SETSe_bicomp2(.,
-  #               force = "force",
-  #               distance = "distance",
-  #               edge_name = "edge_name",
-  #               k = "k",
-  #               tstep = 0.02,
-  #               tol = sum(abs(vertex_attr(., "force")))/10000,
-  #               static_limit = 1,
-  #               sparse = F,
-  #               verbose = TRUE)
-  
-  #by comparing the average tension experienced by each node we can 
 
   embeddings_data$node_detail <- embeddings_data$edge_embeddings %>% tibble() %>%
     separate(., col = edge_name, into = c("from","to"), sep = "_") %>%
@@ -166,7 +153,7 @@ if(!file.exists(save_path)){
   
 })
 
-
+#finally load only the node details
 peel_strain_sum <- list.files(file.path(PLwd, "peel_strain_files"), full.names= T) %>% 
   map_df(~{
     setse_complete <- readRDS(.x)

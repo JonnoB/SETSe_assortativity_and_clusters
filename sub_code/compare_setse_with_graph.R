@@ -10,9 +10,14 @@ if(!dir.exists(file.path(PLwd, "facebook_classifier"))){
 1:nrow(combos) %>%
   walk(~{
     
+    #ID number of iteration
     file_number <- .x
+    #Uni to be analysed
     file_name <- combos$file_name[.x]
       
+    #Check to see if the analysis has already been performed.
+    #If it has skip to next uni
+    #The analysis is quite slow so this avoids uneccessary re-calculation
       if(file.exists(file.path(PLwd, "facebook_classifier", paste0(file_name, ".rds")))){
         
         print(paste("Iteration", .x ,"file", file_name, "exists", "proceeeding to next file"))
