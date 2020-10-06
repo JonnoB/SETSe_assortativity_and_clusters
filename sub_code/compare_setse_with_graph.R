@@ -1,4 +1,3 @@
-
 #create the combinations too test
 combos <-expand_grid(file_name = str_remove(list.files(file.path(PLwd, "facebook_embeddings/facebook"), pattern = ".rds"), 
                                             pattern = ".rds"))
@@ -10,25 +9,20 @@ if(!dir.exists(file.path(PLwd, "facebook_classifier"))){
 1:nrow(combos) %>%
   walk(~{
     
-    #ID number of iteration
     file_number <- .x
-    #Uni to be analysed
     file_name <- combos$file_name[.x]
+    
+    if(file.exists(file.path(PLwd, "facebook_classifier", paste0(file_name, ".rds")))){
       
-    #Check to see if the analysis has already been performed.
-    #If it has skip to next uni
-    #The analysis is quite slow so this avoids uneccessary re-calculation
-      if(file.exists(file.path(PLwd, "facebook_classifier", paste0(file_name, ".rds")))){
+      print(paste("Iteration", .x ,"file", file_name, "exists", "proceeeding to next file"))
+      
+    } else{
+      
+      performance_df  <- 1 %>% map_df(~{    
         
-        print(paste("Iteration", .x ,"file", file_name, "exists", "proceeeding to next file"))
+        #the other periods shouldn't be used as 2004 has so few occurances
+        active_period <-2005 #list(2004L, 2005L, 2004:2005)[[.x]]
         
-      } else{
-        
-        performance_df  <- 1 %>% map_df(~{    
-        
-          #the other periods shouldn't be used as 2004 has so few occurances
-          active_period <-2005 #list(2004L, 2005L, 2004:2005)[[.x]]
-          
         print(paste("file number", file_number  ,"file", file_name, "active_period", paste(active_period, collapse = ", ")))
         embeddings_data <- readRDS(file.path(PLwd, "facebook_embeddings/facebook",paste0(file_name, ".rds")))
         
@@ -42,7 +36,7 @@ if(!dir.exists(file.path(PLwd, "facebook_classifier"))){
             mean_tension2 = (mean_tension-mean(mean_tension))/sd(mean_tension),
             elevation2 = (elevation-mean(elevation))/sd(elevation))  %>%
           select(node, target, euc_tension2:elevation2, year)
-
+        
         
         g <- readRDS(list.files("/home/jonno/setse_1_data/facebook100/facebook100_igraph", full.names = T, pattern = file_name))
         
@@ -58,8 +52,8 @@ if(!dir.exists(file.path(PLwd, "facebook_classifier"))){
         #                                           select(name = node, from_target = target) ,.)
         
         g_list <-as_data_frame(g)# %>%
-          #remove all edges that join nodes not in the dataset
-          #filter(from %in% data_node_details$node, to %in% data_node_details$node)
+        #remove all edges that join nodes not in the dataset
+        #filter(from %in% data_node_details$node, to %in% data_node_details$node)
         
         #create edge list with attribute of the same class
         voted_preds <- g_list %>%
@@ -71,9 +65,9 @@ if(!dir.exists(file.path(PLwd, "facebook_classifier"))){
           left_join(data_node_details %>% mutate(target = as.integer(as.character(target)))  %>% 
                       select(node, to_target = target), by =c("to" ="node")) %>%
           mutate(same_class = (to_target ==from_target)*1) %>%
-         #as only data for the active years is included there is a lot of NA values.
+          #as only data for the active years is included there is a lot of NA values.
           #these can be removed by keeping only complete cases
-           filter(complete.cases(.)) %>%
+          filter(complete.cases(.)) %>%
           #get the counts for each year for every node
           group_by(from, from_target, to_target, year) %>%
           summarise(counts = n()) %>%
@@ -89,9 +83,9 @@ if(!dir.exists(file.path(PLwd, "facebook_classifier"))){
                     preds = max(preds)) %>%
           ungroup %>%
           #remove the other years and the other student types
-           filter(
-         year %in% active_period,
-         truth !=0) 
+          filter(
+            year %in% active_period,
+            truth !=0) 
         
         #test <- left_join(data_node_details %>% select(from = "node", target),voted_preds)
         
@@ -116,7 +110,7 @@ if(!dir.exists(file.path(PLwd, "facebook_classifier"))){
           filter(
             year %in% active_period,
             target !=0) 
-          
+        
         
         #Two questions is setse better than chance? is it better than the actual graph?
         
@@ -142,16 +136,15 @@ if(!dir.exists(file.path(PLwd, "facebook_classifier"))){
         
         return(knn_perf)
         
+        
+        
+      })
       
+      saveRDS(performance_df, file = file.path(PLwd, "facebook_classifier", paste0(file_name, ".rds")))
       
-    })
-    
-    saveRDS(performance_df, file = file.path(PLwd, "facebook_classifier", paste0(file_name, ".rds")))
-    
-      }
+    }
     
     
   })
-
 
 

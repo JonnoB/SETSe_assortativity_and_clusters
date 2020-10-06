@@ -7,20 +7,6 @@ editor_options:
   chunk_output_type: console
 ---
 
-
-module unload compilers mpi
-module load compilers/gnu/4.9.2
-module load python3/3.6
-module load cuda/8.0.61-patch2/gnu-4.9.2
-module load cudnn/6.0/cuda-8.0
-module load tensorflow/1.8.0/cpu
-
-module unload compilers mpi
-module load compilers/gnu/4.9.2
-module load python3/3.6
-module load keras/2.2.4
-
-
 This markdown is to convert the basic set of peels quintet graphs to the graphML format, so that they can be imported into python and used witht the GEM, library.
 
 This markdown file should be run after all chunks in `Introduction_to_sets2.Rmd`  down to `peel strain` has been run
@@ -31,13 +17,6 @@ This markdown file should be run after all chunks in `Introduction_to_sets2.Rmd`
 graphml_path <- file.path(PLwd, "peels_graphml")
 
 .x <- 200
-
-multi_quintet[[400]] %>% 
-  delete_vertex_attr(., "sub_class") %>% 
-  delete_edge_attr(., "type") %>%
-  as_data_frame(., what = "vertices") 
-
-vert
 
 1:500 %>% walk(~{
 graph_id <- .x
@@ -52,12 +31,23 @@ g %>%
   delete_vertex_attr(., "sub_class") %>%
   delete_vertex_attr(., "node") %>%
   delete_edge_attr(., "type") %>%
-  delete_graph_attr(., "type") %>%
+  delete_graph_attr(., "type")  %>%
+  set.vertex.attribute("class", 
+                       value = as.numeric(as.factor(get.vertex.attribute(., "class"))))%>%
   write_graph(., file_path, format = "graphml")
 
 }
   )
 
+
+g %>% 
+  delete_vertex_attr(., "sub_class") %>%
+  delete_vertex_attr(., "node") %>%
+  delete_edge_attr(., "type") %>%
+  delete_graph_attr(., "type")  %>%
+  set.vertex.attribute("class", 
+                       value = as.numeric(as.factor(get.vertex.attribute(., "class")))) %>%
+  as_data_frame(., what = "vertices")
 
 ```
 
@@ -147,7 +137,7 @@ peels_metrics <- metric_set(accuracy, precision, recall, f_meas)
 
 
 embedded_files <- list.files(file.path(PLwd, "peel_benchmark_embeddings2"), full.names = T)
-
+#calculate the embedding sub-class classification
 include <-!grepl(embedded_files, pattern = "SDNE")
 GEM_embeds <- embedded_files[include] %>%
   map_df(~{
@@ -226,6 +216,7 @@ test_df %>%
 ggplot(., aes(x = dimension_1, y= dimension_2, colour = sub_class) ) + geom_point()
 
 
+#Calculate the average x y points for the embeddings
 GEM_embeds_agg <- embedded_files %>%
   map_df(~{
     
@@ -441,13 +432,192 @@ n2v_embeds_agg <-  node2vec_embeds %>%
 
 ```
 
+#DGI
+
+THis is the cleaning for the DGI method using Stellargraph
+
+```{r}
+.x <- "/home/jonno/setse_1_data/peel_benchmark_stellargraph2/DGI_d_2_graph_id_12_type_A.csv"
+
+
+DGI_embedded_files <- list.files("/home/jonno/setse_1_data/peel_benchmark_stellargraph2", full.names = T)
+
+
+#This loop has code to remove zero variance columns as these cause a rank deficiency in the classification algo
+#The two dimensions can also be perfectly corellated, this is also corrected
+DGI_embeds <- DGI_embedded_files  %>%
+  map_df(~{
+    
+    print(.x)
+    embedded_path <- .x#embedded_files[50]
+    
+    #split the file name to get the graph information
+    graph_data <- str_split(basename(embedded_path), pattern = "_", simplify = T )
+    
+    #read the csv in from the folder
+    csv_df <- read.csv(embedded_path, header = FALSE, skip = 1) #col_names = FALSE)
+    zero_var_cols <- nearZeroVar(csv_df ) #identify zero var columns
+    csv_df <- csv_df %>% select(-all_of(zero_var_cols)) #remove zero var columns
+    
+    #in the case that there is more than 1 data column after the 0 variance colunmns have been removed then check for perfect corellation
+    if(ncol(csv_df)>2){
+      print("checking for correlation")
+      #froms stack overflow 
+      #https://stackoverflow.com/questions/18275639/remove-highly-correlated-variables
+      df2 = cor(csv_df %>%select(-V1))
+      hc = findCorrelation(df2, cutoff=0.99) # putt any value as a "cutoff" 
+      hc = sort(hc)+1 #add one as there is the name column
+      csv_df = csv_df%>% select(-all_of(hc)) #[,-c(hc)]
+    }
+    
+  
+
+    #add the embedding values to the matching graph
+    g_temp <- multi_quintet[[as.integer(graph_data[6])]]
+    
+    if(ncol(csv_df)==1){
+      
+    test_df <- as_data_frame(g_temp, what = "vertices") %>%
+      mutate(class = factor(class),
+             sub_class = factor(sub_class)) %>%
+      mutate(class_preds = ifelse(class =="A", "B", "A"),
+             sub_preds = ifelse(sub_class =="A_1", "B_1", "A_1"),
+             class_preds =  factor(class_preds, levels = c("A", "B")),
+             sub_preds  = factor(sub_preds, levels = c("A_1", "A_2", "B_1", "B_2"))
+             )
+      
+    } else {
+    
+    # for(i in 2:ncol(csv_df)){ #The first column from the stellargraph is the node id
+    # #add in each dimension in the dataset
+    # g_temp <-  g_temp %>%
+    #   set_vertex_attr(., paste0("dimension_", i), value =  csv_df %>% pull(i))
+    #   
+    #   
+    # }
+
+    number_of_variables_df <-ncol(csv_df)-1
+    
+    #create dataframe to perform linear separation analysis on
+    # test_df <- as_data_frame(g_temp, what = "vertices") %>%
+    #   mutate(class = factor(class),
+    #          sub_class = factor(sub_class))
+    
+    test_df <- as_data_frame(g_temp, what = "vertices") %>%
+      left_join(csv_df %>%
+      mutate(V1 = str_remove(V1, "n") %>% as.numeric()+1,
+             V1 = as.character(V1)), by = c("node"="V1")) %>%
+      mutate(class = factor(class),
+             sub_class = factor(sub_class))
+    
+    #a couple of the methods have twice as many dimensions but half of them are doubles.
+    #This means the matrices are not full rank
+    #ensureing only the first half of the variables are taken means that the matrices become full rank again
+    number_of_columns <-3+ number_of_variables_df
+    
+    class_formula <- as.formula(paste("class", 
+                                      paste(names(test_df)[4:number_of_columns], collapse=" + "), sep=" ~ "))
+    sub_class_formula <- as.formula(paste("sub_class", 
+                                          paste(names(test_df)[4:number_of_columns], collapse=" + "), sep=" ~ "))
+    
+    #class_mod <- svm(class ~  dimension_2, test_df, kernel = "linear")
+    class_mod <- vglm( class_formula , family=multinomial, data = test_df)
+    
+    #sub_mod <- svm(sub_class ~  dimension_2, test_df, kernel = "linear")
+    sub_mod <- vglm(sub_class_formula, family=multinomial, data = test_df)
+    
+    class_preds_vect <- predict(class_mod, decision.values = TRUE, type = "response") %>% 
+      { colnames(.)[apply(., 1, which.max)]}
+    sub_preds_vect <- predict(sub_mod, decision.values = TRUE, type = "response") %>% 
+      { colnames(.)[apply(., 1, which.max)]}
+    
+    test_df <- test_df %>%
+      mutate(class_preds =  factor(class_preds_vect, levels = c("A", "B")),
+             sub_preds  = factor(sub_preds_vect, levels = c("A_1", "A_2", "B_1", "B_2")))
+       
+    } 
+    # test_df <- test_df %>%
+    #   mutate(class_preds = predict(class_mod, decision.values = TRUE),
+    #          sub_preds  = predict(sub_mod, decision.values = TRUE))
+    
+    bind_rows(peels_metrics(test_df, truth = class, estimate = class_preds) %>%
+                mutate(model_type = "class"),
+              peels_metrics(test_df, truth = sub_class, estimate = sub_preds)%>%
+                mutate(model_type = "sub_class")
+    ) %>%
+      mutate(embeddings_method = graph_data[1],
+             embeddings_dimensions = graph_data[3],
+             graph_id = as.integer(graph_data[6]),
+             type = str_remove(graph_data[8], pattern = ".csv"))
+    
+  })
+
+#Running the prediction on the below file then plotting the embedding shows why type E is so high for subclass and yet low for class.
+#.x<- "/home/jonno/setse_1_data/peel_benchmark_stellargraph2/DGI_d_2_graph_id_496_type_E.csv"
+#test_df %>% ggplot(aes(x = V2, colour = sub_class)) + geom_density()
+#The
+
+# 25% of the models did not converge
+table(DGI_embeds$.metric, DGI_embeds$.estimate==0)
+table(DGI_embeds$type, DGI_embeds$.estimate==0)
+DGI_embeds %>%
+  filter(.estimate !=0) %>%
+  filter(.metric =="accuracy") %>%
+  ggplot(aes(x = embeddings_method, y = .estimate, fill = embeddings_method)) + geom_boxplot()+
+  facet_wrap(type~model_type)
+
+
+#Calculate the average x y points for the embeddings
+DGI_embeds_agg <- DGI_embedded_files  %>%
+  map_df(~{
+    
+    print(.x)
+    embedded_path <- .x#embedded_files[50]
+    
+    #split the file name to get the graph information
+    graph_data <- str_split(basename(embedded_path), pattern = "_", simplify = T )
+    
+    #read the csv in from the folder
+    csv_df <- read.csv(embedded_path, header = FALSE, skip = 1) #col_names = FALSE)
+    
+    #add the embedding values to the matching graph
+    g_temp <- multi_quintet[[as.integer(graph_data[6])]] %>%
+      set_vertex_attr(., "dimension_1", value =  csv_df %>% pull(2)) %>%
+      set_vertex_attr(., "dimension_2", value =  csv_df %>% pull(3))
+    
+    #create dataframe to perform linear separation analysis on
+    test_df <- as_data_frame(g_temp, what = "vertices") %>%
+      mutate(class = factor(class),
+             sub_class = factor(sub_class)) %>%
+      mutate(embeddings_method = graph_data[1],
+             embeddings_dimensions = graph_data[3],
+             graph_id = as.integer(graph_data[6]),
+             type = str_remove(graph_data[8], pattern = ".csv"))
+   
+    
+  }) %>%
+  group_by(embeddings_method, graph_id, type, embeddings_dimensions) %>%
+  summarise(dimension_1 = mean(dimension_1),
+            dimension_2 = mean(dimension_2))
+
+test_df %>% group_by(embeddings_method, graph_id, type, embeddings_dimensions) %>%
+  summarise(across(where(is.numeric)),mean)
+
+DGI_embeds_agg  %>%
+  ggplot(aes(x = dimension_1, y = dimension_2, colour = type)) + 
+  geom_point() +
+  facet_wrap(~embeddings_method)
+
+```
+
 
 #compare methods
 
 ##all network embeds
 ```{r}
-bind_rows(GEM_embeds_agg, n2v_embeds_agg, node_data_agg) %>%
+bind_rows(GEM_embeds_agg, n2v_embeds_agg, node_data_agg, DGI_embeds_agg) %>%
   group_by(embeddings_method) %>%
+  filter(embeddings_method != "SDNE") %>%
   mutate(dimension_1 = (dimension_1-min(dimension_1))/(max(dimension_1)-min(dimension_1)),
          dimension_2 = (dimension_2-min(dimension_2))/(max(dimension_2)-min(dimension_2))) %>%
   # mutate(dimension_1 = (dimension_1-mean(dimension_1))/sd(dimension_1),
@@ -459,6 +629,7 @@ bind_rows(GEM_embeds_agg, n2v_embeds_agg, node_data_agg) %>%
        x = "first dimension (tension for SETSe)",
        y = "second dimension (elevation for SETSe)")
 ggsave(file.path(FiguresFolder, "Seperating_Peels_quintet.pdf"))
+
 ```
 
 ```{r}
@@ -466,7 +637,8 @@ ggsave(file.path(FiguresFolder, "Seperating_Peels_quintet.pdf"))
 #accuracy plot
 bind_rows(GEM_embeds, 
           SETSe_embeds, 
-          node_perf
+          node_perf,
+          DGI_embeds %>% filter(.estimate != 0)
           ) %>%
   filter(.metric =="accuracy") %>%
   mutate(type2 = paste0("Type ", type,": ", model_type, " detection") %>% str_replace(., "_", " ")) %>%
@@ -480,7 +652,7 @@ bind_rows(GEM_embeds,
 ggsave(file.path(FiguresFolder,  "peels_embedding_linear_sep.pdf"))        
 
 #linearly seperably plot
-linear_sep <- bind_rows(GEM_embeds, SETSe_embeds, node_perf)%>%
+linear_sep <- bind_rows(GEM_embeds, SETSe_embeds, node_perf, DGI_embeds)%>%
   filter(.metric =="accuracy") %>%
   mutate(linear_sep = .estimate ==1) %>%
   group_by(embeddings_method, type, model_type) %>%
@@ -552,28 +724,37 @@ graphml_path <- file.path(PLwd, "facebook100", "facebook100_graphml")
 if(!dir.exists(graphml_path)){ dir.create(graphml_path)}
 
 1:length(uni_files) %>% walk(~{
-
-#file path to load
-current_path <- uni_files[.x]
-
-#load file
-g <- read_rds(current_path)
-
-#strip all but major component
-g2 <- remove_small_components(g)
-
-#new file path
-new_path <- current_path %>% 
-  dirname() %>%
-  dirname() %>%
-  file.path(., "facebook100_graphml"
-            , str_replace(basename(current_path), 
-                          ".rds", ".graphml") )
-
-#save as graphml
-write_graph(g2, file = new_path, format = "graphml" )
-
+  
+  #file path to load
+  current_path <- uni_files[.x]
+  
+  #load file
+  g <- read_rds(current_path)
+  
+  #strip all but major component
+  g2 <- remove_small_components(g)
+  
+  #take only the name and year data
+  vertices_df <- as_data_frame(g2, what = "vertices") %>%
+    select(name, year)
+  edge_df <- as_data_frame(g2)
+  
+  #new file path
+  new_path <- current_path %>% 
+    dirname() %>%
+    dirname() %>%
+    file.path(., "facebook100_graphml"
+              , str_replace(basename(current_path), 
+                            ".rds", ".graphml") )
+  
+  #save as graphml
+  graph_from_data_frame(edge_df, 
+                        directed = FALSE, 
+                        vertices = vertices_df) %>%
+    write_graph(., file = new_path, format = "graphml" )
+  
 })
+
 ```
 
 ##facebook csv
@@ -606,6 +787,13 @@ Create a dataframe which contains the memory required for each embedding
 
 file_paths <- list.files("/home/jonno/setse_1_data/facebookpython", pattern = "facebookpython.e", full.names = T)
 
+#These are the uni ID's produced by GEM, as node2vec is found using the node2vec library all the entries that correspond to node2vec need to be removed that all values between 401-500 inclusive
+GEM_uni_ids<-str_remove(basename(file_paths), ".*\\.") %>% as.integer()
+
+file_paths <- c(file_paths[!(GEM_uni_ids %in% 401:500)],
+  list.files("/home/jonno/setse_1_data/facebooknode2vec", pattern = "facebooknode2vec.e", full.names = T))
+
+
 
 #this complicated method is because sometimes when I was trying to get it to work
 #some examples would be missing. This prevents errors.
@@ -629,7 +817,7 @@ tibble( Mbytes = print_data[grep("Maximum resident set size", print_data)] %>% s
 ```
 
 
-#time
+##time
 
 extract the time from the algorithms
 
@@ -674,16 +862,20 @@ tibble( time = print_data[grep("Elapsed ", print_data)] %>% str_remove_all("\\\t
          time2 = hms(time2)) %>% 
   select(-data_id) %>%
   bind_cols(., uni_stats %>% arrange(nodes) %>% slice(1:nrow(memory_df_auto))) %>%
-  select(time, data_id, time_length, time2)
+  select(time, data_id, time_length, time2, file_name)
   
 
 
 ```
 
 
-#plot time memory
+##plot time memory
 
 ```{r}
+
+test <- read_rds(file.path("/home/jonno/setse_1_data/facebook100/facebook100_igraph", "American75.rds")) %>%
+  as_data_frame(., what = "vertices")
+
 embedding_details <-expand_grid(model = c("HOPE", 
                       "LapEig", 
                       "LLE", 
@@ -698,36 +890,91 @@ embedding_details <-expand_grid(model = c("HOPE",
   bind_rows(., memory_df_auto %>%
               select(nodes, edges, Mbytes, data_id) %>%
               mutate(model = "SETSe") %>%
-              left_join(SETSe_time_taken) %>% select(nodes:model, time = time2)
+              left_join(SETSe_time_taken) %>% select(nodes:model, time = time2, file_name)
   ) %>%
   mutate(time2 = as.numeric(time)) %>%
-  filter(model %in% c("HOPE", "LapEig","LLE", "SETSe"))
+  filter(model %in% c("HOPE", "LapEig","LLE", "SETSe", "node2vec"))
 
 #LLE has not been embedded, why?
 embedding_details %>%
   group_by(model) %>%
   summarise(count = n())
 
-
+embedding_details %>%
+  filter(model =="SDNE")
 
 #Memory
-embedding_details %>%
-  filter(Mbytes <16000) %>%
+mem_plot <- embedding_details %>%
+ filter(Mbytes <16000) %>%
    # filter(nodes < 9000) %>%
-  ggplot(aes(x = nodes, y = Mbytes, colour = model)) + geom_point() +
-  labs(title = "Maximum Megabytes of RAM used during embedding process",
-       x = "Total number of nodes in network")
+  ggplot(aes(x = nodes/1000, y = Mbytes/1000, colour = model)) + geom_point() +
+  labs(title = "Max Megabytes of RAM used during embedding",
+       x = "Edges in network (000's)",
+       y = "Gigabytes")
 
 #HOPE and LapEig have a quadratic memory usage. LLE is linear but didn't work so is ignored
 
 
 #Time
-embedding_details %>%
+time_plot <- embedding_details %>%
   filter(Mbytes <16000) %>%
   #  filter(nodes < 9000) %>%
-  ggplot(aes(x = nodes, y = as.numeric(time)/60, colour = model)) + geom_point() +
-  labs(title = "Time in minutes used during embedding process",
-       x = "Total number of nodes in network")
+  ggplot(aes(x = nodes/1000, y = as.numeric(time2)/60, colour = model)) + geom_point() +
+  labs(title = "Time used during embedding",
+       x = "Total number of nodes in network",
+       y = "Minutes")
+
+
+(time_plot + theme(legend.position="none")| 
+    mem_plot )
+
+
+ +
+  theme(legend.position = c(0.9, 0.1), legend.justification = c(1, 0)) 
+
+test <- time_taken_df %>%
+  select(time_per_iter, file_name) %>% 
+  mutate(model = "SETSe") %>%
+  left_join( embedding_details,.) %>%
+  mutate(time2 = time2/60) %>% #convert from seconds to minutes
+  filter(Mbytes <16000) %>%
+  pivot_longer(., cols = c(Mbytes, time_per_iter, time2)) %>%
+  mutate(name = case_when(name=="time2"~"Embedding time (mins)",
+                          name =="time_per_iter" ~"Iteration time (secs)",
+                          TRUE~ "Memory (Gb)")) %>%
+  filter(!is.na(value))
+
+time_plot <-test %>%
+  filter(name != "Memory (Gb)") %>%
+  ggplot(aes(x = edges/1000, y = value, color = model)) + 
+  facet_wrap(~name, scales = "free_y") +
+  geom_point() +
+ # theme(legend.position = c(0.9, 0.1), legend.justification = c(1, 0)) +
+  labs(title = "Space and memory complexity of the embeddings methods",
+       x = "number of edges (000's)",
+       colour = "Model"
+       )
+
+
+mem_plot <- test %>%
+  filter(name == "Memory (Gb)") %>%
+  ggplot(aes(x = nodes/1000, y = value/1000, color = model)) + 
+  facet_wrap(~name, scales = "free_y") +
+  geom_point() +
+ # theme(legend.position = c(0.9, 0.1), legend.justification = c(1, 0)) +
+  labs(
+       x = "number of nodes (000's)",
+       colour = "Model",
+       y = "value"
+       )
+
+
+(time_plot+ theme(legend.position="none") )/ 
+  (mem_plot + theme(legend.position="none")| get_legend(
+  # create some space to the left of the legend
+  mem_plot + theme(legend.box.margin = margin(0, 0, 0, 12) ))
+  )
+ggsave(file.path(FiguresFolder, "time_complexity.pdf"))
 ```
 
 ```{r}
@@ -741,5 +988,30 @@ embedded_files <- list.files("/home/jonno/setse_1_data/facebookpython", pattern 
  load_file <- embedded_files[1]
  embeddings_df <- read_csv(load_file, col_names = FALSE)
 
+```
+
+
+#Assoratativity
+
+Checking how the alternative embedding methods find assorativity
+
+```{r}
+
+
+  node_details_df <- readRDS(
+    file.path("/home/jonno/setse_1_data/facebook_embeddings/processed_embeddings",
+                                       "facebook_node_detail.rds" )) %>%
+    mutate(abs_elevation = abs(elevation)) %>%
+    group_by(file_name) %>%
+    summarise_at(., vars(sum_tension:elevation , abs_elevation), mean, na.rm = T) %>%
+    left_join(uni_stats, by = "file_name") %>%
+  mutate(node_edge = nodes/edges)
+```
+
+
+
+```{r}
+ mean_embeddings_value(folder_path, file_name)
+  
 ```
 

@@ -7,13 +7,16 @@ editor_options:
   chunk_output_type: console
 ---
 
+sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-keys ACFA9FC57E6C5DBE
+
+Deep graph infomax on stellargraph
 
 repo on some interesting road safety network data
 https://github.com/Moradii/stlnpp
 The paper
 https://doi.org/10.1016/j.spasta.2019.100400
 
-
+  
 
 #Set up
 ```{r Setup}
@@ -417,75 +420,57 @@ process_facebook_embeddings(file.path(PLwd, "facebook_embeddings", "facebook1000
 This plots the tension and elevation for all the uni's in the facebook
 ```{r}
 
+#creates/loads the embedded_assort dataframe which contains the mean embeddings of all the methods across the facebook dataset
+source(file = file.path(SubcodeFolder, "create_assort_dataframe.R"))
 
-  node_details_df <- readRDS(
-    file.path("/home/jonno/setse_1_data/facebook_embeddings/processed_embeddings",
-                                       "facebook_node_detail.rds" )) %>%
-    mutate(abs_elevation = abs(elevation)) %>%
-    group_by(file_name) %>%
-    summarise_at(., vars(sum_tension:elevation , abs_elevation), mean, na.rm = T) %>%
-    left_join(uni_stats, by = "file_name") %>%
-  mutate(node_edge = nodes/edges)
-  
-
-test <- cor(node_details_df %>% select(sum_tension:euc_tension, abs_elevation, contains("assort")))# %>% as_tibble()
-test <- cor(node_details_df %>% select( contains("assort")))# %>% as_tibble()
-
-  
-  #plot the facebook uni's by elevation and tension
+#plot the facebook uni's by elevation and tension
 #There is no relationship with size of uni which is good.
 #there is a relationship between tension and elevation, which is less good I guess
 #question is how does this relate to student housing 
 
 #highlighting auburb main and michigen is a good idea to show how the assortativity of similar uni's is very separate
-relate_figure <-  node_details_df %>%
-  filter(mean_tension<1000) %>%
-    ggplot(aes(y = abs_elevation, x = mean_tension, colour = year_assort, text = file_name)) + geom_point() + 
-    scale_color_viridis_c() +
-    labs(title = "The average elevation and tension embeddings of the facebook 100 dataset.",
-         y = "mean absolute node elevation ",
-         x = "mean node tension",
-         color = "year\nassortativity")
+relate_figure <-  embedded_assort %>%
+  group_by(model) %>%
+  mutate(X = mean_abs_X2,
+         X = (X-mean(X))/sd(X),
+         Y = mean_abs_X1,
+         Y = (Y-mean(Y))/sd(Y)) %>%
+  #  filter(mean_tension<1000) %>%
+  ggplot(aes(y = X, x = Y, colour = year_assort)) + geom_point() + 
+  scale_color_viridis_c() +
+  facet_wrap(~model, scales = "free")+
+  labs(title = "The normalised average absolute embeddings of the facebook 100 dataset.",
+       x = "first dimension (tension for SETSe)",
+       y = "second dimension (elevation for SETSe)",
+       color = "year\nassortativity")  
 
 relate_figure 
 ggsave(file.path(FiguresFolder, "facebook_100_elev_tens.pdf"))
 
 ggplotly(relate_figure)
 
-node_details_df %>% ggplot(aes(x = student_assort)) + geom_density()
-
-  #the year assortativity of the model can be predicted by the below linear model
-  lm(year_assort ~ abs_elevation , node_details_df) %>% summary()
-  lm(year_assort ~  mean_tension, node_details_df) %>% summary()
-  
-  assort_mod <- lm(year_assort ~ abs_elevation + mean_tension, node_details_df)
-  summary(assort_mod)
-  #It appears that a linear model predicting gender assortativity on the year embedding
-  #has a stronger relationship than the straight corellation between gender and year assortativty.
-  assort_mod <- lm(student_assort ~ abs_elevation  + mean_tension, node_details_df)
-  summary(assort_mod)
-  #the linear model predicting gender assortyativity from year is nothing
-    lm(student_assort ~ year_assort, node_details_df) %>% summary
+assort_embeds_perf <- unique(embedded_assort$model) %>%
+  map_df(~{
     
+    data_df <- embedded_assort %>% filter(model ==.x)
+    
+      #the year assortativity of the model can be predicted by the below linear model
+  X2_only <-lm(year_assort ~ mean_abs_X2 , data_df) %>% glance() 
+  X1_only <- lm(year_assort ~ mean_abs_X1 , data_df) %>% glance()
+  both_mod <- lm(year_assort ~ mean_abs_X2 + mean_abs_X1, data_df) %>% glance
   
-  node_details_df %>%
-    ggplot(aes(y = abs_elevation, x = euc_tension, colour = gen_assort)) + geom_point() + 
-    scale_color_viridis_c() 
-  
-    node_details_df %>%
-    ggplot(aes(y = student_assort, x = year_assort, colour = gen_assort)) + geom_point() + 
-    scale_color_viridis_c() 
+  bind_rows(X2_only %>% mutate(variables_used = "X2"),
+            X1_only %>% mutate(variables_used = "X1"),
+            both_mod %>% mutate(variables_used = "both")) %>%
+  mutate(model = .x)
+    
+  }) 
 
-  cor(node_details_df$mean_tension, node_details_df$abs_elevation)
-  #euclidean tension has a substantially higher corellation
-  cor(node_details_df$euc_tension, node_details_df$abs_elevation)
-  
-   node_details_df %>%
-    ggplot(aes(x = mean_tension)) +
-     geom_density()
+#SETSe is much better than the others at producing meaningful embeddings
+#node2vec gets a 20 point bump if the model uses a square term
+assort_embeds_perf %>% filter(variables_used =="both") %>% arrange(-r.squared) %>%
+  select(R = r.squared, model)
 
-   
-   
 ```
 
 ##time memory complexity
@@ -555,14 +540,14 @@ tibble(lambda = box_cox_data_iter$x, log_likelihood = box_cox_data_iter$y) %>%
   arrange(-log_likelihood)
   
 #actually time per iteration seems to be linear to the number of edges
-  time_taken_df %>%
-    ggplot(aes(x = edges, y = time_per_iter, colour = )) + geom_point()+
+Iteration_plot <-  time_taken_df %>%
+    ggplot(aes(x = nodes, y = time_per_iter, colour = )) + geom_point()+
     scale_color_viridis_c()+
-    labs(title = "SETSe time per iteration",
+    labs(title = "Time per iteration for SETSe",
          y = "seconds per iteration",
          x = "number of edges in graph")
   
-  
+Iteration_plot   
   
 
 
@@ -889,7 +874,7 @@ for 2005 SETSe outperforms graph neighbour voting for all values of k, for balan
 
 ```{r}
  fb_metrics <- metric_set(accuracy, kap, bal_accuracy, f_meas)
-source(file = file.path(SubcodeFolder, "compare_setse_with_graph.R"))
+source(file = file.path(SubcodeFolder, "compare_embeddings_with_graph.R"))
 
 class_perf <- list.files(file.path(PLwd, "facebook_classifier"), full.names = TRUE) %>%
   map_df(readRDS) %>%
@@ -898,107 +883,44 @@ class_perf <- list.files(file.path(PLwd, "facebook_classifier"), full.names = TR
   mutate(diff = estimate-network_knn,
          better = (diff>0)*1,
          naive = network_type2/(network_type1+network_type2),
-         better_naive = estimate>naive)  
+         better_naive = estimate>naive,
+         metric = case_when(
+           metric =="bal_accuracy"~"Balanced accuracy",
+           metric =="f_meas" ~"F measure",
+           metric =="accuracy" ~"Accuracy",
+           TRUE ~"Cohen's kappa"
+         ))  
 
-class_perf %>%
-  group_by(file_name) %>%
-  summarise_all(first) %>%# pull(naive) %>% mean
-  ggplot(aes(x = naive)) + geom_density()
 
-test <-class_perf %>%
+relative_embeddings <-class_perf %>%
 #  filter(metric!= "accuracy") %>%
-  group_by(metric, active_period, k) %>%
+  group_by(metric, active_period, k, model) %>%
   summarise(better = mean(better, na.rm = T),
             better_naive = mean(better_naive, na.rm  = T),
             na_val = sum(is.na(better)),
             student_1 = sum(student_1),
             student_2 = sum(student_2))
 
-test %>%
+
+#create dummy data to get the colours out.
+#Using the colour wheel is probably smoother but whatever
+colour_data <- {tibble(id = LETTERS[1:5], value = 1:5) %>%
+  ggplot(aes(x = id, y = value, fill = id)) + geom_col()} %>% ggplot_build(.)
+
+
+
+
+relative_embeddings %>%
  # filter(active_period==2005) %>%
-  ggplot(aes(x = k, y = better, colour = metric)) + geom_line() +
+  ggplot(aes(x = k, y = better, colour = model))+
+  facet_wrap(~metric, scales ="free_y") + 
+  geom_line() +
   labs(title = "Predicting student type from year embeddings relative to graph neighbour voting",
-       x = "number of nearest neighbours in SETSe space k",
-       y ="fraction of times SETSe beats graph neighbour voting")
+       x = "number of nearest neighbours",
+       y ="fraction of times embedding beats graph neighbour voting") + 
+  scale_colour_manual(values = colour_data$data[[1]]$fill[-3])
 ggsave(file.path(FiguresFolder,  "facebook_knn_vs_graph_vote.pdf"))   
 
-
-test2 <- test%>%
-  filter(active_period==2005)
-
-class_perf2 <- class_perf %>%
-  filter(active_period==2005) %>%
-  group_by(metric, k) %>%
-  summarise(estimate = mean(estimate),
-            network_knn = mean(network_knn)) 
-
-class_perf %>%
-  ggplot(aes(x = as.factor(k), y = estimate, 
-             #group = file_name,
-             color = metric)) + geom_boxplot()+
-  labs(title = "f1 score original")
-
-prop.test(55, 100, alternative = "greater")
-
-class_perf %>%
-  filter(file_name =="Yale4") %>%
-#  filter(active_period==2005) %>%
-  mutate(diff = estimate-network_knn) %>%
-ggplot(aes(x = k, y = diff, colour = metric)) + geom_point()+
-  facet_wrap(~file_name)
-
-
-class_perf_year <- list.files(file.path(PLwd, "facebook_classifier_year"), full.names = TRUE) %>%
-  map_df(readRDS) %>%
-  mutate(estimate	= ifelse(is.na(estimate	), 1, estimate),
-         network_knn = ifelse(is.na(network_knn), 1, network_knn))%>%
-  mutate(diff = estimate-network_knn,
-         better = (diff>0)*1)  
-
-test_year <-class_perf_year %>%
-  group_by(metric, k) %>%
-  summarise(better = mean(better, na.rm = T),
-            mean_diff = mean(diff),
-            na_val = sum(is.na(better)))
-
-test_year %>%
-  ggplot(aes(x = k, y = better, colour = metric)) + geom_line() +
-  labs(title = "Predicting student type from year embeddings relative to graph neighbour voting",
-       x = "number of nearest neighbours in SETSe space k",
-       y ="Fraction of times SETSe beats graph neighbour voting")
-
-
-class_perf_year2 <- class_perf_year %>%
-  group_by(metric, k) %>%
-  summarise(estimate = mean(estimate)) %>%
-  filter(metric!="mcc")
-
-class_perf_year2 %>%
-  ggplot(aes(x = k, y = estimate, 
-             color = metric)) + geom_line()
-
-test <- class_perf %>%
-  filter(metric =="f_meas") 
-
-
-test <- bind_rows(
-  class_perf_year %>%
-  group_by(metric, k) %>%
-  summarise(estimate = mean(estimate)) %>%
-  filter(metric!="mcc") %>% mutate(type = "year") ,
-class_perf %>%
-  filter(active_period==2005) %>%
-  group_by(metric, k) %>%
-  summarise(estimate = mean(estimate)) %>% mutate(type = "type")
-) %>% mutate(type = factor(type, levels = c("year", "type")))
-
-test%>%
-  ggplot(aes(x = k, y = estimate, 
-             #group = file_name,
-             color = metric)) + geom_line() +
-  facet_grid(~type) +
-  labs(title = "Performance of k nearest neighbour voting on year embeddings and the\nhidden embedding student type")
-ggsave(file.path(FiguresFolder,  "facebook_knn_vs_graph_vote.pdf")) 
 ```
 
 ##2 dimension projections
