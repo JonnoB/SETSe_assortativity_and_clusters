@@ -1,6 +1,7 @@
 
 #creates the embedding mean embedding values for assortativity
 
+folder_path <- file.path(PLwd, "facebook100/facebook100_igraph")
 
 if(file.exists(file.path(PLwd, "embedded_assortativity.rds"))){
   
@@ -10,7 +11,7 @@ if(file.exists(file.path(PLwd, "embedded_assortativity.rds"))){
   
   
   #create the combinations too test
-  combos <-expand_grid(file_name = str_remove(list.files(file.path(PLwd, "facebook_embeddings/facebook"), pattern = ".rds"), 
+  combos <- expand_grid(file_name = str_remove(list.files(file.path(PLwd, "facebook_embeddings/facebook"), pattern = ".rds"), 
                                               pattern = ".rds"))
   
   all_embeddings <- 1:nrow(combos) %>%
@@ -26,7 +27,7 @@ if(file.exists(file.path(PLwd, "embedded_assortativity.rds"))){
       embeddings_data <- readRDS(file.path(PLwd, "facebook_embeddings/facebook",paste0(file_name, ".rds")))
       
       #get the embeddings for all the different networks into a dataframe ready to be analysed for performance
-      other_embeddings <- mean_embeddings_value (folder_path, file_name)
+      other_embeddings <- mean_embeddings_value(folder_path, file_name)
       
       
     })
@@ -47,16 +48,16 @@ if(file.exists(file.path(PLwd, "embedded_assortativity.rds"))){
            file_name)
   
   
-  out <- bind_rows(all_embeddings, node_details_df) %>%
+  embedded_assort <- bind_rows(all_embeddings, node_details_df) %>%
     left_join(uni_stats, by = "file_name") %>%
     mutate(node_edge = nodes/edges)
   
   
   #save the performance of the embeddings method
-  saveRDS(out, file = file.path(PLwd, "embedded_assortativity.rds"))
+  saveRDS(embedded_assort, file = file.path(PLwd, "embedded_assortativity.rds"))
   
   #cleanup
-  rm(out);rm(node_details_df);rm(all_embeddings);rm(combos)
+rm(node_details_df);rm(all_embeddings);rm(combos)
   
 }
 

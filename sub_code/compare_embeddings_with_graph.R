@@ -53,9 +53,10 @@ if(!dir.exists(file.path(PLwd, "facebook_classifier"))){
       #get the embeddings for all the different networks into a dataframe ready to be analysed for performance
       embeddings <- clean_embeddings_pre_eval(folder_path, file_name, active_period, data_node_details)
 
-      
+      #embeddings_df <- embeddings %>% filter(model =="DGI")
       knn_perf <- unique(embeddings$model) %>%
         map_df(~{
+          #print(.x)
           get_embeddings_knn_performance(embeddings %>% filter(model ==.x), active_period, network_vote_performance)
           
         })

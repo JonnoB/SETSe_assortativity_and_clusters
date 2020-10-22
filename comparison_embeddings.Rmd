@@ -33,7 +33,7 @@ g %>%
   delete_edge_attr(., "type") %>%
   delete_graph_attr(., "type")  %>%
   set.vertex.attribute("class", 
-                       value = as.numeric(as.factor(get.vertex.attribute(., "class"))))%>%
+                       value = as.numeric(as.factor(get.vertex.attribute(., "class")))-1)%>%
   write_graph(., file_path, format = "graphml")
 
 }
@@ -260,7 +260,7 @@ GEM_embeds_agg %>%
 
 ```
 
-
+#load setse values
 ```{r}
 
 node_data2 <- readRDS(file.path(PLwd, "node_data2.rds"))
@@ -322,7 +322,7 @@ GEM_embeds_agg %>%
   summarise(counts = n())
 ```
 
-##node2vec
+#node2vec
 
 ```{r}
 
@@ -431,6 +431,195 @@ n2v_embeds_agg <-  node2vec_embeds %>%
 
 
 ```
+
+#node2vec stellar
+
+```{r}
+
+n2v_stellar_embedded_files <- list.files("/home/jonno/setse_1_data/peel_benchmark_stellargraph_node2vec2", full.names = T)
+
+
+#This loop has code to remove zero variance columns as these cause a rank deficiency in the classification algo
+#The two dimensions can also be perfectly corellated, this is also corrected
+n2v_stellar_embeds <- n2v_stellar_embedded_files  %>%
+  map_df(~{
+    
+    print(.x)
+    embedded_path <- .x#embedded_files[50]
+    
+    #split the file name to get the graph information
+    graph_data <- str_split(basename(embedded_path), pattern = "_", simplify = T )
+    
+    #read the csv in from the folder
+    csv_df <- read_delim(embedded_path, 
+                         delim = " ",
+                         col_names = FALSE,
+                         skip = 1
+                         ) 
+    
+    names(csv_df) <- paste0("V", 1:ncol(csv_df))
+    zero_var_cols <- nearZeroVar(csv_df ) #identify zero var columns
+    csv_df <- csv_df %>% select(-all_of(zero_var_cols)) #remove zero var columns
+    
+    #in the case that there is more than 1 data column after the 0 variance colunmns have been removed then check for perfect corellation
+    if(ncol(csv_df)>2){
+      print("checking for correlation")
+      #froms stack overflow 
+      #https://stackoverflow.com/questions/18275639/remove-highly-correlated-variables
+      df2 = cor(csv_df %>%select(-V1))
+      hc = findCorrelation(df2, cutoff=0.99) # putt any value as a "cutoff" 
+      hc = sort(hc)+1 #add one as there is the name column
+      csv_df = csv_df%>% select(-all_of(hc)) #[,-c(hc)]
+    }
+    
+  
+
+    #add the embedding values to the matching graph
+    g_temp <- multi_quintet[[as.integer(graph_data[6])]]
+    
+    if(ncol(csv_df)==1){
+      
+    test_df <- as_data_frame(g_temp, what = "vertices") %>%
+      mutate(class = factor(class),
+             sub_class = factor(sub_class)) %>%
+      mutate(class_preds = ifelse(class =="A", "B", "A"),
+             sub_preds = ifelse(sub_class =="A_1", "B_1", "A_1"),
+             class_preds =  factor(class_preds, levels = c("A", "B")),
+             sub_preds  = factor(sub_preds, levels = c("A_1", "A_2", "B_1", "B_2"))
+             )
+      
+    } else {
+    
+    # for(i in 2:ncol(csv_df)){ #The first column from the stellargraph is the node id
+    # #add in each dimension in the dataset
+    # g_temp <-  g_temp %>%
+    #   set_vertex_attr(., paste0("dimension_", i), value =  csv_df %>% pull(i))
+    #   
+    #   
+    # }
+
+    number_of_variables_df <-ncol(csv_df)-1
+    
+    #create dataframe to perform linear separation analysis on
+    # test_df <- as_data_frame(g_temp, what = "vertices") %>%
+    #   mutate(class = factor(class),
+    #          sub_class = factor(sub_class))
+    
+    test_df <- as_data_frame(g_temp, what = "vertices") %>%
+      left_join(csv_df %>%
+      mutate(V1 = str_remove(V1, "n") %>% as.numeric()+1,
+             V1 = as.character(V1)), by = c("node"="V1")) %>%
+      mutate(class = factor(class),
+             sub_class = factor(sub_class))
+    
+    #a couple of the methods have twice as many dimensions but half of them are doubles.
+    #This means the matrices are not full rank
+    #ensureing only the first half of the variables are taken means that the matrices become full rank again
+    number_of_columns <-3+ number_of_variables_df
+    
+    class_formula <- as.formula(paste("class", 
+                                      paste(names(test_df)[4:number_of_columns], collapse=" + "), sep=" ~ "))
+    sub_class_formula <- as.formula(paste("sub_class", 
+                                          paste(names(test_df)[4:number_of_columns], collapse=" + "), sep=" ~ "))
+    
+    #class_mod <- svm(class ~  dimension_2, test_df, kernel = "linear")
+    class_mod <- vglm( class_formula , family=multinomial, data = test_df)
+    
+    #sub_mod <- svm(sub_class ~  dimension_2, test_df, kernel = "linear")
+    sub_mod <- vglm(sub_class_formula, family=multinomial, data = test_df)
+    
+    class_preds_vect <- predict(class_mod, decision.values = TRUE, type = "response") %>% 
+      { colnames(.)[apply(., 1, which.max)]}
+    sub_preds_vect <- predict(sub_mod, decision.values = TRUE, type = "response") %>% 
+      { colnames(.)[apply(., 1, which.max)]}
+    
+    test_df <- test_df %>%
+      mutate(class_preds =  factor(class_preds_vect, levels = c("A", "B")),
+             sub_preds  = factor(sub_preds_vect, levels = c("A_1", "A_2", "B_1", "B_2")))
+       
+    } 
+    # test_df <- test_df %>%
+    #   mutate(class_preds = predict(class_mod, decision.values = TRUE),
+    #          sub_preds  = predict(sub_mod, decision.values = TRUE))
+    
+    bind_rows(peels_metrics(test_df, truth = class, estimate = class_preds) %>%
+                mutate(model_type = "class"),
+              peels_metrics(test_df, truth = sub_class, estimate = sub_preds)%>%
+                mutate(model_type = "sub_class")
+    ) %>%
+      mutate(embeddings_method = graph_data[1],
+             embeddings_dimensions = graph_data[3],
+             graph_id = as.integer(graph_data[6]),
+             type = str_remove(graph_data[8], pattern = ".csv"))
+    
+  })
+
+
+n2v_stellar_embeds_agg <-  n2v_stellar_embedded_files %>%
+  map_df(~{
+    
+    print(.x)
+    embedded_path <- .x#embedded_files[50]
+    
+    #split the file name to get the graph information
+    graph_data <- str_split(basename(embedded_path), pattern = "_", simplify = T )
+    
+    #read the csv in from the folder
+    csv_df <- read.table(embedded_path, header = FALSE, sep = " ", skip = 1) %>%
+      mutate(V1 = str_remove(V1, "n") %>% as.integer() %>%{as.character(.+1)})
+    
+    #add the embedding values to the matching graph
+    g_temp <- multi_quintet[[as.integer(graph_data[6])]] 
+    
+    #create dataframe to perform linear separation analysis on
+    test_df <- as_data_frame(g_temp, what = "vertices") %>%
+      left_join(csv_df, by = c("node"="V1")) %>%
+    rename(dimension_1 = V2, dimension_2 = V3) %>%
+      mutate(class = factor(class),
+             sub_class = factor(sub_class))%>%
+      mutate(embeddings_method = graph_data[1],
+             embeddings_dimensions = graph_data[3],
+             graph_id = as.integer(graph_data[6]),
+             type = str_remove(graph_data[8], pattern = ".csv"))
+   
+    
+  }) %>%
+  group_by(embeddings_method, graph_id, type, embeddings_dimensions) %>%
+  summarise(dimension_1 = mean(dimension_1),
+            dimension_2 = mean(dimension_2))
+
+bind_rows(n2v_embeds_agg, n2v_stellar_embeds_agg %>% rename(dimension_3 = dimension_1, dimension_1 = dimension_2) %>% rename(dimension_2 = dimension_3) %>% mutate(embeddings_method = "stellar")
+            ) %>%
+  ggplot(aes(x = dimension_1, y = dimension_2, colour = type)) + 
+  facet_wrap(~embeddings_method) + 
+  geom_point()
+
+
+n2v_stellar_embeds_agg %>%
+  ggplot(aes(x = dimension_2, y = dimension_1, colour = type)) + 
+  geom_point() + theme_void() + theme(
+  panel.background = element_rect(fill = "grey22",
+                                colour = "darkgrey",
+                                size = 0.5, linetype = "solid")
+  ) +
+  guides(fill=FALSE, 
+                                       color=FALSE) 
+  
+  
+  
+
+bind_rows(
+  node_perf,
+  n2v_stellar_embeds %>% mutate(embeddings_method = "stellar")
+) %>%
+  filter(.metric =="accuracy") %>%
+  mutate(type2 = paste0("Type ", type,": ", model_type, " detection") %>% str_replace(., "_", " ")) %>%
+  ggplot(aes(x = embeddings_method, y = .estimate, fill = embeddings_method)) + geom_boxplot()+
+  facet_wrap(~type2)
+
+
+```
+
 
 #DGI
 
@@ -628,7 +817,7 @@ bind_rows(GEM_embeds_agg, n2v_embeds_agg, node_data_agg, DGI_embeds_agg) %>%
   labs(title = "Seperating Peel's Quintet in 2 dimensions",
        x = "first dimension (tension for SETSe)",
        y = "second dimension (elevation for SETSe)")
-ggsave(file.path(FiguresFolder, "Seperating_Peels_quintet.pdf"))
+#ggsave(file.path(FiguresFolder, "Seperating_Peels_quintet.pdf"))
 
 ```
 
@@ -666,9 +855,6 @@ linear_sep %>%
   labs(title = "Comparison of graph embeddings methods for class identification on Peel's Quintet",
        y = "Accuracy of linear seperability",
        x = "Embeddings method")
-
-
-
 
 
 ```
@@ -769,8 +955,8 @@ expand_grid(model = c("HOPE",
                       "LapEig", 
                       "LLE", 
                       "SDNE",
-                      "node2vec"
-                      ),
+                      "node2vec",
+                      "DGI"),
             unis = basename(uni_files) %>% str_remove(., ".rds")) %>%
   write_csv(., file.path(PLwd, "facebook_model_uni_python.csv"))
 
@@ -791,14 +977,15 @@ file_paths <- list.files("/home/jonno/setse_1_data/facebookpython", pattern = "f
 GEM_uni_ids<-str_remove(basename(file_paths), ".*\\.") %>% as.integer()
 
 file_paths <- c(file_paths[!(GEM_uni_ids %in% 401:500)],
-  list.files("/home/jonno/setse_1_data/facebooknode2vec", pattern = "facebooknode2vec.e", full.names = T))
+  list.files("/home/jonno/setse_1_data/facebooknode2vec", pattern = "facebooknode2vec.e", full.names = T),
+  list.files("/home/jonno/setse_1_data/facebookstellargraph", pattern = "facebookstellargraph.e", full.names = T)
+  )
 
 
 
 #this complicated method is because sometimes when I was trying to get it to work
 #some examples would be missing. This prevents errors.
 python_memory_df <- str_remove(basename(file_paths), ".*\\.") %>% as.integer() %>% map_df(~{
-  
 
  file_number_to_open <- grep(paste0("\\.", .x, "$"), file_paths)
 
@@ -873,14 +1060,12 @@ tibble( time = print_data[grep("Elapsed ", print_data)] %>% str_remove_all("\\\t
 
 ```{r}
 
-test <- read_rds(file.path("/home/jonno/setse_1_data/facebook100/facebook100_igraph", "American75.rds")) %>%
-  as_data_frame(., what = "vertices")
-
 embedding_details <-expand_grid(model = c("HOPE", 
                       "LapEig", 
                       "LLE", 
                       "SDNE",
-                      "node2vec"
+                      "node2vec",
+                      "DGI"
                       ),
             file_name = basename(uni_files) %>% str_remove(., ".rds")) %>%
   mutate(file_number = 1:n()) %>%
@@ -893,7 +1078,7 @@ embedding_details <-expand_grid(model = c("HOPE",
               left_join(SETSe_time_taken) %>% select(nodes:model, time = time2, file_name)
   ) %>%
   mutate(time2 = as.numeric(time)) %>%
-  filter(model %in% c("HOPE", "LapEig","LLE", "SETSe", "node2vec"))
+  filter(model %in% c("HOPE", "LapEig","LLE", "SETSe", "node2vec", "DGI"))
 
 #LLE has not been embedded, why?
 embedding_details %>%
@@ -925,12 +1110,9 @@ time_plot <- embedding_details %>%
        y = "Minutes")
 
 
-(time_plot + theme(legend.position="none")| 
-    mem_plot )
+(time_plot + theme(legend.position="none"))/
+    (mem_plot )
 
-
- +
-  theme(legend.position = c(0.9, 0.1), legend.justification = c(1, 0)) 
 
 test <- time_taken_df %>%
   select(time_per_iter, file_name) %>% 
@@ -968,6 +1150,10 @@ mem_plot <- test %>%
        y = "value"
        )
 
+
+cowplot::get_legend(
+  # create some space to the left of the legend
+  mem_plot)
 
 (time_plot+ theme(legend.position="none") )/ 
   (mem_plot + theme(legend.position="none")| get_legend(

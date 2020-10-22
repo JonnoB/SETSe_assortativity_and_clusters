@@ -6,8 +6,9 @@ output: html_document
 editor_options: 
   chunk_output_type: console
 ---
-
-sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-keys ACFA9FC57E6C5DBE
+https://www.quantamagazine.org/the-thoughts-of-a-spiderweb-20170523/
+Hilton Japyassu UFBA Brazil
+Fritz Vollrath -arachnologist Oxford
 
 Deep graph infomax on stellargraph
 
@@ -21,7 +22,7 @@ https://doi.org/10.1016/j.spasta.2019.100400
 #Set up
 ```{r Setup}
 
-packages <- c("tidyverse", "igraph","readr","readxl", "broom", "stringr", "xtable", "rlang", "latex2exp", "yardstick", "minpack.lm", "ggraph", "patchwork", "rsample", "VGAM", "class", "mclust", "R.matlab", "ranger", "lubridate")
+packages <- c("tidyverse", "igraph","readr","readxl", "broom", "stringr", "rlang", "latex2exp", "minpack.lm", "ggraph", "patchwork", "rsample", "VGAM", "class", "lubridate", "caret", "cowplot", "yardstick")
 
 new.packages <- packages[!(packages %in% installed.packages()[,"Package"])]
 if(length(new.packages)) install.packages(new.packages)
@@ -81,7 +82,7 @@ source(file = file.path(SubcodeFolder, "prepare_peels_quintet_data.R"))
  (plot_list[[1]] | plot_list[[2]] | plot_list[[3]] )/
      (plot_list[[4]]| plot_list[[5]]) +
    plot_annotation(
-  title = "The Peels quintet of assortativty identical graphs",
+  title = "The Peels quintet of assortativity identical graphs",
 #  subtitle = 'The graphs can be separated using SETSe'
 )
 ggsave(file.path(FiguresFolder,  "Peels_quintet.pdf"))
@@ -96,20 +97,34 @@ rm(plot_list)
 ```{r}
 #requires the "quintet" and "class_data_df" data frames
 source(file = file.path(SubcodeFolder, "process_peel_strain.R"))
+aggregated_peels <- process_comparison_methods_aggregated()
 #the basic version used the original data
 
-peel_strain_sum %>%
-  filter(k==0) %>%
-  group_by(graph_id, graph_type) %>%
-  summarise_if(is.numeric, ~mean(abs(.x))) %>%
-  ggplot(aes(x = mean_tension, y = elevation, colour = graph_type)) + geom_point(alpha = 0.8) +
-  labs(title = "Separating Peel's quintet using elevation and strain",
-       x = "Mean node average edge strain",
-       y = "Mean node elevation of class A",
-       colour = "graph type")
- # ggsave(file.path(FiguresFolder, "Seperating_Peels_quintet.pdf"))
-#This demonstrates that the algorithm is topologically sensitive.
-#Multiclass groups may be seperable using the 1 vs all method common in multiclass logitic regression, then seperating in a dimensional space equivalent to 2*(number of classes -1), that is beyond the scope of the paper.
+aggregated_peels$agg  %>%
+  group_by(embeddings_method) %>%
+  filter(embeddings_method != "SDNE") %>%
+  mutate(dimension_1 = (dimension_1-min(dimension_1))/(max(dimension_1)-min(dimension_1)),
+         dimension_2 = (dimension_2-min(dimension_2))/(max(dimension_2)-min(dimension_2))) %>%
+  ggplot(aes(x = dimension_1, y = dimension_2, colour = type)) + 
+  geom_point() +
+  facet_wrap(~embeddings_method) +
+  labs(title = "Separating Peel's Quintet in two dimensions",
+       x = "first dimension (tension for SETSe)",
+       y = "second dimension (elevation for SETSe)")
+ggsave(file.path(FiguresFolder, "Seperating_Peels_quintet.pdf"))
+
+
+aggregated_peels$full %>%
+  filter(.metric =="accuracy") %>%
+  mutate(type2 = paste0("Type ", type,": ", model_type, " detection") %>% str_replace(., "_", " ")) %>%
+  ggplot(aes(x = embeddings_method, y = .estimate, fill = embeddings_method)) + geom_boxplot()+
+  facet_wrap(~type2)  +
+  guides(fill=FALSE) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(title = "Comparison of graph embeddings methods for class identification on Peel's Quintet",
+       y = "accuracy",
+       x = "")
+ggsave(file.path(FiguresFolder,  "peels_embedding_linear_sep.pdf"))   
 
 ```
 
@@ -142,27 +157,27 @@ accuract of the knn is about 83% and 84%. N.B the old data was higher (95% and 9
 ##Variable k
 If the strength of relationship within and between groups varies then we findd that SETSe can distinguish between topologically identical networks that differ only in the strength of relationship.
 ```{r}
-
-
-peel_strain_sum %>%
-  ggplot(., aes( x= mean_tension_per_node, y = mean_abs_elevation, colour = as.factor(k))) + geom_point(alpha = 0.5) +
-  facet_wrap(~graph_type, scales = "free_y") +
-  labs(title = "The effect of different relationship strengths within and between groups on \ntension and elevation",
-       colour = "relationship"
-       )
-ggsave(file.path(FiguresFolder, "strength_effect.pdf"))
-
-peel_strain_sum %>%
-  filter(
-  ) %>%
-  ggplot(., aes( x= mean_tension_per_node, y = mean_abs_elevation, colour = as.factor(k))) + geom_point(alpha = 0.5) +
-  facet_wrap(~graph_type, scales = "free_y")
-
-
-
-peel_strain_sum %>%
-  ggplot(., aes( x= mean_tension_per_node, y = mean_abs_elevation, colour = as.factor(graph_type))) + geom_point(alpha = 0.5) +
-  facet_wrap(~factor(k), scales = "free_y")
+##This is section is not necessary for the paper
+# 
+# peel_strain_sum %>%
+#   ggplot(., aes( x= mean_tension_per_node, y = mean_abs_elevation, colour = as.factor(k))) + geom_point(alpha = 0.5) +
+#   facet_wrap(~graph_type, scales = "free_y") +
+#   labs(title = "The effect of different relationship strengths within and between groups on \ntension and elevation",
+#        colour = "relationship"
+#        )
+# ggsave(file.path(FiguresFolder, "strength_effect.pdf"))
+# 
+# peel_strain_sum %>%
+#   filter(
+#   ) %>%
+#   ggplot(., aes( x= mean_tension_per_node, y = mean_abs_elevation, colour = as.factor(k))) + geom_point(alpha = 0.5) +
+#   facet_wrap(~graph_type, scales = "free_y")
+# 
+# 
+# 
+# peel_strain_sum %>%
+#   ggplot(., aes( x= mean_tension_per_node, y = mean_abs_elevation, colour = as.factor(graph_type))) + geom_point(alpha = 0.5) +
+#   facet_wrap(~factor(k), scales = "free_y")
 
 ```
 
@@ -248,101 +263,6 @@ ggsave(file.path(FiguresFolder,  "peels_quintet_groups_in_setse_space.pdf"))
  test <- test_ARI %>%
     group_by(name, graph_class) %>%
     summarise(mean = mean(ARI))
-```
-
-
-##n-dimensional strain
-
-This is not used in the paper. IT is only kept so I don't forget
-
-C relates to A and B like A and B relate to each other. C relates to itself, like B relates to itself
-
-```{r}
-C2B <- quintet %>%
-  filter(class_1 != class_2) %>%
-  mutate_at(., .vars = vars(sub_class_1:class_2), .funs = ~str_replace(., "A", "C"))
-
-C2A <- quintet %>%
-  filter(class_1 != class_2) %>%
-  mutate_at(., .vars = vars(sub_class_1:class_2), .funs = ~str_replace(., "B", "C"))
-
-C2C <-  quintet %>%
-  filter(class_1 =="B", class_2 == "B") %>%
-  mutate_at(., .vars = vars(sub_class_1:class_2), .funs = ~str_replace(., "B", "C"))
-
-quintet_3d <- bind_rows(quintet, C2B, C2A, C2C)
-
-
-class_data_df_3d <- expand.grid(class = c("A", "B", "C"), sub = 1:2) %>%
-  as_tibble() %>%
-  mutate(sub_class = paste(class, sub, sep = "_"),
-         size = 10 #replace with a vector if group sizes uneevn
-  )
-
-set.seed(1235)
-quintet_g_list <- LETTERS[1:5] %>%
-  map(~create_assortivity_graph_from_subgroups(class_data_df_3d, quintet_3d %>% rename(edges = .x), 10) %>%
-        set.edge.attribute(., "type", value = .x) %>%
-        set.graph.attribute(., "type", value = .x)
-      
-  )
-
-#Assortativity is not the same but who cares jsut use it anyway, there are two paires
-1:5 %>% map_dbl(~{
-  assortativity_nominal( quintet_g_list[[.x]], types = as.factor(vertex_attr( quintet_g_list[[.x]], "class")))
-  
-})
-
-
-
-plot_list2 <- 1:5 %>%
-  map(~{ggraph(quintet_g_list[[.x]]) +
-      geom_edge_fan()+
-      geom_node_point(aes(fill= class, shape = grepl("1", sub_class)), size=3) +
-      scale_shape_manual(values=c(21, 24, 23)) +
-      guides(fill = "none", shape = "none") +
-      labs(title = paste("Type", LETTERS[.x]))})
-
-#red is A green is B, blue is C
-#triangle means subclass 1
-
- (plot_list2[[1]] | plot_list2[[2]] | plot_list2[[3]] )/
-     (plot_list2[[4]]| plot_list2[[5]]) 
-
-
-
-if(file.exists( file.path(PLwd, "setse_3d.rds"))){
- setse_3d<- readRDS( file.path(PLwd, "setse_3d.rds"))
-} else {
-source(file = file.path(SubcodeFolder, "process_peel_strain_3d.R"))
-saveRDS(setse_3d, file.path(PLwd, "setse_3d.rds"))
-}
-
-  setse_3d %>%
-  ggplot(aes(x = mean_tension_per_node, y = mean_euc_elev, colour = graph_type)) + geom_point()
-
-peel_strain_sum <- list.files(file.path(PLwd, "peel_strain_files"), full.names= T) %>% 
-  map_df(~{
-    setse_complete <- readRDS(.x)
-
-    Out  <-setse_complete$graphsummary %>%
-      mutate(elevation = mean(sqrt(2*(setse_complete$node_embeddings$elevation^2))))
-    return(Out)
-  })
-
-test <-peel_strain_sum %>% mutate(type = "binary") %>%
-  filter(k==0) %>%
-  bind_rows(setse_3d %>% mutate(type = "three classes"))
-
-
-test %>%
-  ggplot(aes(x = tension, y = elevation, colour = graph_type)) + geom_point()+
-  facet_wrap(~type) + geom_point(alpha = 0.8) +
-  labs(title = "Separating Peel's quintet using embedded height and tension for binary and 3 class cases",
-       x = "Mean edge tension",
-       y = "Mean node height of class A",
-       colour = "graph type")
-ggsave(file.path(FiguresFolder, "Seperating_Peels_quintet.pdf"))
 ```
 
 
@@ -439,10 +359,11 @@ relate_figure <-  embedded_assort %>%
   ggplot(aes(y = X, x = Y, colour = year_assort)) + geom_point() + 
   scale_color_viridis_c() +
   facet_wrap(~model, scales = "free")+
-  labs(title = "The normalised average absolute embeddings of the facebook 100 dataset.",
+  labs(title = "The normalised average absolute embeddings of the Facebook 100 dataset.",
        x = "first dimension (tension for SETSe)",
        y = "second dimension (elevation for SETSe)",
-       color = "year\nassortativity")  
+       color = "year\nassortativity")  +
+  theme(legend.position = c(0.9, 0.1), legend.justification = c(1, 0)) #positions the legend in the middle of the 6th panel
 
 relate_figure 
 ggsave(file.path(FiguresFolder, "facebook_100_elev_tens.pdf"))
@@ -469,7 +390,7 @@ assort_embeds_perf <- unique(embedded_assort$model) %>%
 #SETSe is much better than the others at producing meaningful embeddings
 #node2vec gets a 20 point bump if the model uses a square term
 assort_embeds_perf %>% filter(variables_used =="both") %>% arrange(-r.squared) %>%
-  select(R = r.squared, model)
+  select(model, R = r.squared, p.value)
 
 ```
 
@@ -637,155 +558,33 @@ summary(memory_mod)
 ```
 
 
-
-```{r}
-uni_stats2 <-1:length(uni_files) %>%
-  map_df(~{
-    
-    g <- readRDS(uni_files[.x]) %>%
-      remove_small_components()
-    #get the data on the uni's
-    uni_name <- basename(uni_files[.x]) %>% str_remove(., ".rds") %>% str_remove(., "[0-9]+")
-    data_id <- basename(uni_files[.x]) %>% str_remove(., ".rds") %>% str_remove(., "[ a-zA-Z]+") %>% 
-      str_remove(., " ")
-    
-    print(uni_name)
-    
-    assortativity_nominal(g, types = as.factor(vertex_attr(g, "year")))
-    
-    g_df <- as_data_frame(g, what = "vertices") %>% tibble
-    
-    dorms_df <- facebook_fraction(g, "dorm")
-    year_df <- facebook_fraction(g, "year")
-    student_type <- vertex_attr(g, "student_faculty")
-    
-    tibble(file_number = .x, 
-           file_name =  basename(uni_files[.x]) %>% str_remove(., ".rds"),
-           uni_name = uni_name,
-           data_id = data_id,
-           nodes = vcount(g), edges = ecount(g),
-           student_1 = sum(student_type==1)/vcount(g),
-           student_2 = sum(student_type==2)/vcount(g),
-           student_3 = sum(student_type==3)/vcount(g),
-           student_4 = sum(student_type==4)/vcount(g),
-           student_5 = sum(student_type==5)/vcount(g),
-           student_6 = sum(student_type==6)/vcount(g),
-           
-    )
-    
-  })
-```
-
-
 ##Plot individual uni
 
 This chunk allow the plotting of individual uni's
 
 ```{r}
-#penn test 
-penn_test <-  readRDS(file.path("/home/jonno/setse_1_data/facebook_embeddings/facebook","Penn94.rds"))
- penn_test$embeddings_data$network_dynamics %>%
-  bind_rows() %>%
-   # left_join(uni_stats, by = c("file_name")) %>%
-  ggplot(aes(x = Iter, y = log10(static_force))) + geom_point()
+
+#c("Dartmouth6", "Wellesley22", "Wesleyan43", "Haverford76")
+#c("Auburn71", "Pepperdine86", "Rice31", "Simmons81")
+#c("Auburn71", "Mich67",  "Maine59", "BC17")
  
- penn_test$node_detail %>%
-   filter((year %%1)==0#,
-   #       student_faculty %in% 1:2,
-#          year %in% 2004:2005
-) %>%
-  # filter(log(euc_tension)>-1) %>%
-   filter(year %in% c(2005)) %>%
-   ggplot(aes(x = (mean_tension), y = elevation, color = factor(student_faculty))) + geom_point()+
-   labs(title = "SETSe embeddings Penn State",
-        color = "Year of enrollment")
- 
-ranger_df %>%
-   ggplot(aes( x = (mean_tension2))) + geom_density()
-
-#  theme(legend.position="bottom")
-
-#means doesn't seem very useful here, probably becuase so much is going on
- fb_metrics <- metric_set(accuracy, kap, bal_accuracy, f_meas)
-ranger_df <- penn_test$node_detail %>% filter(gender !=0,
-                                         (year %% 1)==0,
-                                         year %in% c(2005,2005),
-                                         student_faculty %in% 1:2) %>%
-  mutate(
-        target = factor(student_faculty),
-         euc_tension2 = (euc_tension-mean(euc_tension))/sd(euc_tension),
-         mean_tension2 = (mean_tension-mean(mean_tension))/sd(mean_tension),
-         elevation2 = (elevation-mean(elevation))/sd(elevation)) 
-
-
-set.seed(54)
-sample_vect <-  sample(1:nrow(ranger_df), size = round(nrow(ranger_df)*0.8), replace = TRUE)
-train <- ranger_df %>% slice(sample_vect)
-test <- ranger_df %>% slice((1:nrow(ranger_df))[!(1:nrow(ranger_df) %in% sample_vect)])
-
-
-                
- model <- ranger(target~ mean_tension+ elevation + euc_tension + year, 
-               data= train)
-
- voters <- 11
-      mod <- class::knn.cv(train = train %>% select(mean_tension2, euc_tension2, elevation2), 
-                    cl = factor(train$target), 
-                   k = voters, prob = TRUE)
-  
-  #adjust for the fact that the node itself is included in the voting data
-
-   
-tibble(truth = test$target,
-              estimate = predict(model, data = test)$predictions) %>%
-  fb_metrics(truth = truth, estimate = estimate)
-
-tibble(truth = train$target,
-              estimate = mod) %>%
-  fb_metrics(truth = truth, estimate = estimate)
-
-
- max(abs(penn_test$node_detail$static_force))
-
- penn_test2 <-  penn_test$node_detail %>%
-    mutate(abs_static_force = abs(static_force),
-           abs_force = abs(force.x),
-           fract = abs_static_force/abs_force) 
-  
-  penn_test2 %>%
-    ggplot(aes(x = log10(fract))) + geom_density()
- 
-  
-   table(abs(penn_test$node_detail$static_force)<0.001)/nrow(penn_test$node_detail)
-
-   
-   table(round(penn_test$node_detail$force.x, 2))
-   
-  table(penn_test2$fract<1)
-   
-  #total static force error 
-  sum(abs(penn_test$node_detail$static_force))/sum(abs(penn_test$node_detail$force.x))
-  
-  comparison_df <- bind_rows( 
-    readRDS(file.path("/home/jonno/setse_1_data/facebook_embeddings/HPC_embeddings","Caltech36.rds"))$node_detail,
-    readRDS(file.path("/home/jonno/setse_1_data/facebook_embeddings/HPC_embeddings","Simmons81.rds"))$node_detail)
-  
-   c("Dartmouth6", "Wellesley22", "Wesleyan43", "Haverford76")
-  c("Auburn71", "Pepperdine86", "Rice31", "Simmons81")
-  
-  c("Auburn71", "Mich67",  "Maine59", "BC17")
-  
-  
+#The uni's to be plotted
 target_unis <-   c("Auburn71", "Mich67",  "Maine59", "BC17")
-comparison_df<-    target_unis %>%
+#load files
+comparison_df <-    target_unis %>%
     map_df(~{
-      readRDS(file.path("/home/jonno/setse_1_data/facebook_embeddings/facebook",
+      readRDS(file.path(PLwd, "facebook_embeddings/facebook",
                            paste0(.x, ".rds")))$node_detail
            })
-  
-dat_text <- node_details_df %>%
-  filter(file_name %in% target_unis) %>%
-  select(uni = file_name, year_assort, mean_tension, euc_tension, abs_elevation, ) %>%
+
+#create text to put on each plot
+dat_text <- comparison_df %>% 
+  rename(file_name = uni) %>%
+  group_by(file_name) %>%
+  summarise(mean_tension = mean(mean_tension),
+            abs_elevation = mean(abs(elevation))) %>%
+  left_join(uni_stats) %>%
+  select(uni = file_name, year_assort, mean_tension, abs_elevation, ) %>%
   mutate_at(., vars(-uni), signif, 2) %>%
   mutate(text_message = paste0("assort=", year_assort, " abs elevation=", abs_elevation, " tension=", mean_tension ))
 
@@ -812,54 +611,12 @@ comparison_df %>%
        x = "log mean tension",
        color = "Year")
 ggsave(file.path(FiguresFolder,  "node_level_embeddings_of_universities.pdf"))   
-  
-comparison_df %>%
-  filter((year %% 1)==0,
-         log(mean_tension)>-2.5
-  ) %>%
-  ggplot(aes(x = log(median_tension), y = elevation)) + 
-  geom_point(aes(colour = uni), alpha = 0.4) +
-  facet_wrap(~factor(year)) 
 
-#year centroid
-    comparison_df %>%
-    filter((year %% 1)==0) %>%
-        group_by(year,
-                 uni) %>%
-        summarise(mean_elevation = mean(elevation),
-                  mean_tension = mean(mean_tension)) %>%
-    ggplot(aes(x = log(mean_tension), y = mean_elevation, colour =uni)) + 
-    geom_point() +
-    facet_wrap(~ factor(year)) 
-  
-    comparison_df %>%
-    filter((year %% 1)==0,
-           log(mean_tension)>-2.5) %>%
-    ggplot(aes(x = (elevation), colour = factor(year))) + 
-    geom_density() +
-    facet_wrap(~uni)
-    
-    #The first year is never the highest tension
-    #the highest tension is always the lowest years. However the first year is usualy one of the highest years.
-    #The lowest tension years are those who are closest to the mean for the university.
-    #This is counter intuitive as these years experience tension from all other yeas.
-        comparison_df %>%
-     filter((year %% 1)==0,
-           log(mean_tension)>-2.5) %>%
-    ggplot(aes(x = log10(mean_tension), colour = factor(year))) + 
-    geom_density() +
-    facet_wrap(~uni)
-  
-        
-g %>%
-  set_vertex_attr(., "year", value = as.factor(vertex_attr(g, "year")) %>% as.integer) %>%
-  assortativity_nominal(., types = "year")
-        
 ```
 
 ##Classificiation
 
-This chunk compares nearest neighbout classificationusing setse against neighbour classification using the original graph
+This chunk compares nearest neighbout classification using setse against neighbour classification using the original graph
 
 The setse embeddings beats the network neighbour approach on average across all values of k, for all metrics.
 
@@ -873,6 +630,7 @@ I will use the results only for 2005.
 for 2005 SETSe outperforms graph neighbour voting for all values of k, for balanced accuracy, accuracy and cohens kappa
 
 ```{r}
+
  fb_metrics <- metric_set(accuracy, kap, bal_accuracy, f_meas)
 source(file = file.path(SubcodeFolder, "compare_embeddings_with_graph.R"))
 
@@ -893,7 +651,7 @@ class_perf <- list.files(file.path(PLwd, "facebook_classifier"), full.names = TR
 
 
 relative_embeddings <-class_perf %>%
-#  filter(metric!= "accuracy") %>%
+  filter(!knn_failed) %>%
   group_by(metric, active_period, k, model) %>%
   summarise(better = mean(better, na.rm = T),
             better_naive = mean(better_naive, na.rm  = T),
@@ -904,7 +662,7 @@ relative_embeddings <-class_perf %>%
 
 #create dummy data to get the colours out.
 #Using the colour wheel is probably smoother but whatever
-colour_data <- {tibble(id = LETTERS[1:5], value = 1:5) %>%
+colour_data <- {tibble(id = LETTERS[1:6], value = 1:6) %>%
   ggplot(aes(x = id, y = value, fill = id)) + geom_col()} %>% ggplot_build(.)
 
 
@@ -918,7 +676,7 @@ relative_embeddings %>%
   labs(title = "Predicting student type from year embeddings relative to graph neighbour voting",
        x = "number of nearest neighbours",
        y ="fraction of times embedding beats graph neighbour voting") + 
-  scale_colour_manual(values = colour_data$data[[1]]$fill[-3])
+  scale_colour_manual(values = colour_data$data[[1]]$fill[-4])
 ggsave(file.path(FiguresFolder,  "facebook_knn_vs_graph_vote.pdf"))   
 
 ```
